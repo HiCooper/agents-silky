@@ -62,6 +62,8 @@ docs-site/
 
 ### Step 3: 创建 package.json
 
+使用以下模板（来自 Hydra docs-site 生产项目）：
+
 ```json
 {
   "name": "docs",
@@ -73,12 +75,21 @@ docs-site/
     "preview": "vitepress preview"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.14.0",
     "vitepress": "^1.5.0",
-    "vitepress-plugin-mermaid": "^2.0.17",
-    "mermaid": "^11.14.0"
+    "vitepress-plugin-mermaid": "^2.0.17"
   }
 }
 ```
+
+**依赖说明**：
+- `vitepress`: VitePress 核心
+- `vitepress-plugin-mermaid`: Mermaid 图表支持
+- `mermaid`: Mermaid 图表库
+- `markdown-it`: Markdown 解析器（可选，增强功能）
+- `@types/markdown-it`: TypeScript 类型定义
 
 ### Step 4: 创建 .vitepress/config.ts
 
@@ -208,5 +219,3 @@ features:
 此 skill 基于以下标准产品文档站点结构设计：
 - Hydra 支付基础设施文档 (docs-site)
 - VitePress 官方文档
-
-如需查看完整配置示例，参考：[/Users/xueancao/Projects/QoderProjects/star-river/docs-site/.vitepress/config.ts](/Users/xueancao/Projects/QoderProjects/star-river/docs-site/.vitepress/config.ts)
