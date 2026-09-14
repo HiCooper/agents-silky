@@ -1,6 +1,6 @@
 ---
 name: economic-analysis-expert
-description: 「经济分析专家」身份的操作手册——规定「快捷问答」与「专业报告」两种输出模式的选择、结构、行文风格与红线，并固化取数工具链（格隆汇快讯、akshare 指数/ETF、新浪跨市场行情、东财K线）。只要用户提出经济/金融/市场相关问题，如行情研判（A股/港股/美股/韩国KOSPI）、盘前/盘中/收盘分析、宏观经济、通胀与利率、美联储、黄金与贵金属、汇率与人民币、债务周期、资产配置、行业与个股，或说「怎么看/判断一下/分析一下/还能拿吗/出一份报告/复盘/反思/校准」，或让你「拉一下快讯/查一下指数/取个行情」，都应使用本 skill，即使没明说「分析」二字。
+description: 「经济分析专家」身份的操作手册——规定「快捷问答」与「专业报告」两种输出模式的选择、结构、行文风格与红线，并固化取数工具链（A股指数/ETF 与美股一律优先走现成 `ashare-data` skill、格隆汇快讯、新浪跨市场实时行情、腾讯历史日K）。只要用户提出经济/金融/市场相关问题，如行情研判（A股/港股/美股/韩国KOSPI）、盘前/盘中/收盘分析、宏观经济、通胀与利率、美联储、黄金与贵金属、汇率与人民币、债务周期、资产配置、行业与个股，或说「怎么看/判断一下/分析一下/还能拿吗/出一份报告/复盘/反思/校准」，或让你「拉一下快讯/查一下指数/取个行情」，都应使用本 skill，即使没明说「分析」二字。
 ---
 
 # 经济分析专家 · 操作手册
@@ -14,31 +14,42 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 - `references/economic-analysis-expert.md` —— 身份文档。**至少读元规则（§1）与场景速查表（§10）**；涉及具体标的时再读对应工具箱（§2–§7）与标准流程（§8）。
 - `references/agent-system-prompt.md` —— 系统提示词（引导语），身份与行文风格的权威定义。
 - 早盘 / 开盘方向问题：追加 `references/premarket-korea-factor.md`。
-- 复盘与校准：读写 `references/calibration-log.md`。
+- 复盘与校准：按 §7 的**两层约定**读写校准日志——**项目内 `calibration-log.md` 为原始层**（日频写入），本 skill 的 `references/calibration-log.md` 为**提炼层**（只留跨项目可复用的教训）。
 
 本 skill 与身份文档冲突时，**以身份文档的元规则与红线为准**。
 
 ## 1. 数据获取（先取数，再判断）
 
-**原则**：任何判断先落到数据。取数优先级——**本地脚本 / akshare ＞ 新浪实时接口 ＞ WebSearch/WebFetch 补缺**。取到的数据必须标**来源与时间戳**，并区分「实时价 / 收盘价 / EOD 滞后值」。
+**原则**：任何判断先落到数据。**A 股指数/ETF 与美股，一律先走 `ashare-data` skill**（已封装 akshare 的新浪源，稳定、有中文名、带成交额/换手率）；它不覆盖的再用本 skill 的脚本补，最后才 WebSearch/WebFetch。取到的数据必须标**来源与时间戳**，并区分「实时价 / 收盘价 / EOD 滞后值」。
+
+**取数优先级（硬顺序，别跳级）**：
+
+1. **`$SKILLS/ashare-data/fetch`** —— A 股指数/ETF、中美债收益率、**美股指数与个股日线**（含费半 `.SOX`、任意美股代码）；
+2. **本 skill `scripts/`** —— `ashare-data` 不覆盖的部分：跨市场实时面板（港股、韩国、美股期货、油金、美元）与美股**盘前/盘中实时价**；
+3. **新浪 `hq.sinajs.cn` 全量字段自取** —— 需要**多只 A 股个股一次拿齐「开/昨收/收/高/低/成交额」**时（`fetch` 只给单指数/单 ETF 详情，不给个股批量全字段）；
+4. **WebSearch / WebFetch** —— 10Y 美债实时值、隔夜美股现金收盘的解读、韩国个股、新闻催化剂、政策日程。
 
 | 要什么 | 用什么 | 命令入口 |
 |---|---|---|
+| **A股指数 / ETF / 中美债收益率** | `ashare-data`（**首选**） | `$SKILLS/ashare-data/fetch indices`｜`fetch index <代码\|名称>`｜`fetch etf <代码\|关键词>`｜`fetch bond` |
+| **美股指数 / 费半 / 半导体篮子 / 任意美股**（日线） | `ashare-data`（**首选**） | `$SKILLS/ashare-data/fetch us`｜`fetch us semis`｜`fetch us stock AVGO NVDA MU` |
+| 同上（需要在 Python 里内嵌调用时） | 本 skill `scripts/us_data.py`（与 `fetch us` 同源等价） | `$PY $SKILLS/economic-analysis-expert/scripts/us_data.py indices` |
+| **跨市场实时面板**（港股、韩国、美股期货、油金、美元、**美股盘前/实时价**） | 本 skill `scripts/market_panel.sh`（新浪） | `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all` |
+| **多只 A 股个股全量字段**（开/昨收/收/高/低/额） | 新浪 `hq.sinajs.cn` 批量 | 见 `references/data-sources.md` §3.1 |
+| **历史日K**（判趋势 / 破位 / 支撑） | 腾讯 `fqkline`（**东财 K 线不可用，见坑 4**） | 见 `references/data-sources.md` §4 |
 | **格隆汇 7×24 快讯** | 项目自带 `glh_live.py` | `python3 glh_live.py --limit 25` |
-| **A股指数 / ETF / 中美债收益率** | 现成 skill `ashare-data`（akshare + 自带 venv） | `$SKILLS/ashare-data/fetch indices` |
-| **美股指数 / 半导体个股 / 费半**（日线，akshare 新浪源，稳定） | 本 skill 的 `scripts/us_data.py` | `$PY $SKILLS/economic-analysis-expert/scripts/us_data.py indices` |
-| **跨市场实时面板**（美股指、半导体个股、港股、韩国、期货、油金、美元） | 本 skill 的 `scripts/market_panel.sh`（新浪） | `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all` |
-| **历史日K**（判趋势 / 破位 / 支撑） | 东财 kline 接口 | 见 `references/data-sources.md` |
-| **10Y 美债实时、隔夜美股现金收盘、韩国个股、新闻催化剂** | WebSearch / WebFetch | 按需 |
+| **10Y 美债实时、隔夜美股现金收盘解读、韩国个股、新闻催化剂** | WebSearch / WebFetch | 按需 |
 | **M1/M2 等宏观** | `update_m1m2.py`（用 ashare-data 的 venv 跑） | 见 `references/data-sources.md` |
 
 **具体接口、完整符号表、参数与示例，见 `references/data-sources.md`**（需要落地细节时再读，避免占上下文）。
 
-**三个必踩的坑**：
+**五个必踩的坑**（2026-09-15 实测更新）：
 
-1. **akshare 在 skill 自带 venv 里**，系统 `python3` 没装——先设 `PY=$SKILLS/ashare-data/.venv/bin/python`，或用 `$SKILLS/ashare-data/fetch`。
-2. **akshare 取美股要走新浪源**：`index_us_stock_sina`（含费半 `.SOX`）与 `stock_us_daily` 稳定；东财的 `stock_us_spot_em`/`stock_us_hist` 被代理间歇拦截，别依赖。**akshare 只给日线**，实时/盘前价用 `market_panel.sh us`。
-3. **新浪接口返回 GBK**——脚本内已用 `iconv` 转 UTF-8；直接裸 `curl` 会看到乱码。
+1. **akshare 在 skill 自带 venv 里**，系统 `python3` 没装——直接用 `$SKILLS/ashare-data/fetch`（自动走 .venv）；需要手写 akshare 时先设 `PY=$SKILLS/ashare-data/.venv/bin/python`。
+2. **美股必须走新浪源**：`fetch us` 用的是 `index_us_stock_sina` / `stock_us_daily`，实测稳定；**东财**的 `stock_us_spot_em` / `stock_us_hist` / `famous_spot_em` 打 `63/69/72.push2*.eastmoney.com`，被代理间歇拦截，别依赖。**`fetch us` 只给日线（截至最近一个美股收盘）**，要看美股盘前/盘中实时价，走 `market_panel.sh us`。
+3. **`fetch bond` 的美债列是 `nan`**（实测：中债 10 年 1.6888% 正常，美债 10/2/30 年全为 nan）——**10Y 美债走 WebSearch 或用用户给的实时报价**，别把 nan 写成「数据缺失」。
+4. **东财指数日K（`index_zh_a_hist`）在本机稳定被代理拒绝**（`80.push2.eastmoney.com`），**别用它取 A 股指数历史**；`stock_zh_a_hist`（个股日K）时通时不通，也别当主力。**历史日K 统一走腾讯 `fqkline`**（见 `references/data-sources.md` §4）。
+5. **`fetch etf <关键词>` 是全市场扫描，约 18–20 秒**（单只 `fetch etf 512480` 同价）；另外**新浪接口返回 GBK**，脚本内已 `iconv` 转 UTF-8，裸 `curl` 会乱码。
 
 ## 2. 选模式：默认快捷，不主动长篇
 
@@ -129,7 +140,12 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 
 ## 7. 自进化：把判断变成可回测记录
 
-给出任何**可检验**的判断后，将「判断 + 置信度 + 证伪条件 + 日期」追加到 `references/calibration-log.md`；收盘或次日回填「实际结果」「评分（命中/部分命中/未命中）」「归因（模型老化 / 参数更新 / 执行误判）」，并把改进写回对应因子文档。这是身份文档 §9 的落地，别省——没有回测的判断只是观点。
+给出任何**可检验**的判断后，按**两层**落地记录：
+
+1. **原始层（默认，写项目内）**：往**当前项目根目录的 `calibration-log.md`** 追加「判断 + 置信度 + 证伪条件 + 日期」，收盘或次日回填「实际结果」「评分（命中/部分命中/未命中）」「归因（模型老化 / 参数更新 / 执行误判）」。文件不存在就创建（含表头与分层说明）。**写完即止，不动 skill 仓库**——skill 在 session workspace 之外，每次写入都要额外授权，不值得花在日频原始记录上。
+2. **提炼层（触发式，写本 skill）**：只有**换标的、换项目、换月份仍成立**的教训才回写本 skill——新增/废弃因子、阈值修正、失效边界、工具化方法（如量化锚）。触发条件是同一模式重复 ≥2–3 次、或某个框架被证伪；同时把改进写进对应因子文档（如 `references/premarket-korea-factor.md`）。写到 skill 需要授权，所以这一步要低频、且值得。
+
+判据一句话：**「这条结论换一个项目、换一个月还成立吗？」** 成立 → 提炼进 skill；只是当天行情细节 → 留在项目文件。这是身份文档 §9 的落地，别省——没有回测的判断只是观点。
 
 ## 附：本 skill 的文件与位置
 
@@ -138,9 +154,9 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 - `references/economic-analysis-expert.md` —— 身份文档（元规则、工具箱 A–F、流程、场景速查表）；
 - `references/agent-system-prompt.md` —— 系统提示词（引导语）；
 - `references/premarket-korea-factor.md` —— 早盘跨市场前瞻因子；
-- `references/calibration-log.md` —— 判断校准日志（可写，追加式）；
+- `references/calibration-log.md` —— 判断校准日志·**提炼层**（只存跨项目可复用的教训与模板；日频原始记录写项目内 `calibration-log.md`，见 §7）；
 - `references/data-sources.md` —— 取数工具链速查；
 - `scripts/market_panel.sh` —— 跨市场实时面板（新浪；含美股盘前/实时价）；
-- `scripts/us_data.py` —— 美股指数 / 半导体个股日线（须用 `$PY` 跑）。
+- `scripts/us_data.py` —— 美股指数 / 半导体个股日线（须用 `$PY` 跑）；**首选是 `ashare-data/fetch us`，本脚本是它的本地等价封装**，仅在内嵌调用时需要。
 
 脚本也可用绝对路径调用，如 `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all`。

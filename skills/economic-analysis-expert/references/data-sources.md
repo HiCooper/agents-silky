@@ -23,18 +23,28 @@ python3 glh_live.py --json          # 原始 JSON，便于下游处理
 
 ---
 
-## 2. A股指数 / ETF / 债券（akshare，走现成 `ashare-data` skill）
+## 2. A股指数 / ETF / 美股 / 债券（**首选走现成 `ashare-data` skill**）
+
+> **入口优先级（2026-09-15 起）**：**A 股指数/ETF 与美股一律先走 `$SKILLS/ashare-data/fetch`**。它拉不到的（跨市场实时、商品/汇率、韩国、美股盘中价、历史日K）才回本 skill 的 `scripts/` 与本文 §3、§4。
 
 **akshare 只装在 skill 自带 venv 里，系统 `python3` 没有。**
 
 ```bash
-$SKILLS/ashare-data/fetch indices       # 核心指数一览
-$SKILLS/ashare-data/fetch index 000688  # 单个指数（数字自动补 sh/sz）
-$SKILLS/ashare-data/fetch index 科创50   # 支持名称关键词
-$SKILLS/ashare-data/fetch etf 半导体      # 按关键词搜 ETF
-$SKILLS/ashare-data/fetch etf 512480     # 按代码查 ETF
-$SKILLS/ashare-data/fetch bond           # 中美债收益率（EOD，滞后一个交易日）
+# —— A股 / 债券 ——
+$SKILLS/ashare-data/fetch indices        # 核心指数一览（上证/深成/创业板/科创50/沪深300/上证50/中证500/中证1000），实测 ~3s
+$SKILLS/ashare-data/fetch index 000688   # 单个指数（数字自动补 sh/sz；给开/高/低/昨收/成交额）
+$SKILLS/ashare-data/fetch index 科创50    # 支持名称关键词
+$SKILLS/ashare-data/fetch etf 半导体       # 按关键词搜 ETF（⚠️ 全市场扫描，实测 18–20s）
+$SKILLS/ashare-data/fetch etf 512480      # 按代码查 ETF（同样 ~18s）
+$SKILLS/ashare-data/fetch bond            # 中债收益率（EOD，滞后一日）；⚠️ 美债三列为 nan
+
+# —— 美股（日线，新浪源）——
+$SKILLS/ashare-data/fetch us              # 标普/道指/纳指/费半 .SOX，实测 ~3s
+$SKILLS/ashare-data/fetch us semis        # 预设半导体篮子 AVGO/NVDA/TSM/AMD/ASML/INTC
+$SKILLS/ashare-data/fetch us stock AVGO NVDA MU   # 任意美股代码，不限篮子
 ```
+
+**实测边界（2026-09-15）**：① 美股全走新浪源、稳定（0.1–0.6s/次），但**只到最近一个美股收盘（日线）**——要盘前/盘中价用 `market_panel.sh us`；② **`fetch bond` 的美债列返回 `nan`**（中债正常：10 年 1.6888%），**10Y 美债实时走 WebSearch**，别把 nan 写成「数据缺失」；③ `fetch etf` 每次全市场扫描 **18–20s**，急用就直接给已知代码；④ `fetch` 只给指数/ETF 详情，**不给多只 A 股个股的批量全量字段**——那件事走 §3.1。
 
 自定义 akshare 调用时用它的解释器：
 
@@ -69,7 +79,7 @@ $SKILLS/ashare-data/.venv/bin/python -c "import akshare as ak; ..."
 | 美股历史（东财） | `ak.stock_us_hist(symbol="105.AVGO", period="daily", ...)` | ⚠️ 时通时不通（`63.push2his`） |
 | 全美列表 / 代码表 | `ak.stock_us_spot()` / `ak.get_us_stock_name()` | ❌ 走代理超时 |
 
-**已封装成脚本 `scripts/us_data.py`**（必须用 ashare-data 的 venv 跑）。等价入口：`ashare-data` skill 已加同源子命令 `$SKILLS/ashare-data/fetch us [indices|semis|stock <代码...>]`——两者取数逻辑一致，用哪个都行。
+**首选 `$SKILLS/ashare-data/fetch us [semis|stock <代码...>]`**（A 股与美股统一入口，见 §2）。本 skill 的 `scripts/us_data.py` 是**同一取数逻辑的本地封装**，只在需要在 Python 里内嵌调用时才用（两者实测结果一致，任选其一，别两套混着报数）。
 
 ```bash
 PY=$SKILLS/ashare-data/.venv/bin/python
@@ -115,15 +125,54 @@ $SKILLS/economic-analysis-expert/scripts/market_panel.sh fx         # 美元指�
 | 汇率 | `DINIW`（美元指数）`USDCNY` | |
 | 黄金TD | `gds_AUTD` | 元/克 |
 
+### 3.1 多只 A 股个股「全量字段」批量取（`ashare-data` 不覆盖的场景）
+
+`fetch index/etf` 只给**单只**详情，`fetch` 没有个股批量接口。要看**一篮子个股**（如光模块「易中天」、存储、PCB）当天的**开/昨收/收/高/低/成交额**，用新浪一次请求多代码（2026-09-14 实测 22 只一次成功）：
+
+```python
+import urllib.request
+UA = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}   # Referer 必带
+codes = ["sz300308", "sz300502", "sz300394", "sh601138", "sh688981", "sh688256"]
+url = "https://hq.sinajs.cn/list=" + ",".join(codes)
+raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=15).read().decode("gbk", "ignore")
+# 每行：var hq_str_<code>="字段,字段,...";  个股字段序：
+#   [0]名称 [1]今开 [2]昨收 [3]最新 [4]最高 [5]最低 … [8]成交量(股) [9]成交额(元) [30]日期 [31]时间
+# 指数/ETF 全量字段序相同（[8]成交量 [9]成交额），据此自算涨跌幅 = 最新/昨收-1
+```
+
+**三个注意**：① 必须带 `Referer`，否则被拒；② 返回 **GBK**，要 `decode("gbk")`；③ **简版符号 `s_sh000001` 的字段序完全不同**（`名称,最新,涨跌额,涨跌幅,成交量,成交额`），别和全量字段混用——简版适合「只要指数涨跌幅」，全量适合要成交额与高低点。
+
 **拿不到 / 不可用**（别浪费时间）：`gb_$tnx`／`gb_$ust10y`（10Y 美债实时）、`int_sox`、`znb_N225`／`b_N225`（日经）、`znb_005930`／`000660`（韩国个股）、`b_TWSE`（返回 2025 年旧值，勿用）。
 
 **编码**：新浪返回 **GBK**，脚本已 `iconv -f gbk -t utf-8`；裸 `curl` 会乱码。
 
 ---
 
-## 4. 历史日K（东财 kline）
+## 4. 历史日K（**腾讯 fqkline**；东财 K 线在本机不可用）
 
-判断趋势、破位、支撑位时用。
+判断趋势、破位、支撑位时用。**2026-09-15 实测更正**：东财的**指数**日K（akshare `index_zh_a_hist`，打 `80.push2.eastmoney.com`）在本机**稳定被代理拒绝**；**个股**日K（`stock_zh_a_hist`）时通时不通，都不能当主力。**统一走腾讯，A 股/ETF/港股通吃**：
+
+```bash
+# klt=day；末尾 qfq = 前复权；n 为条数（示例取 140 根，够看趋势与支撑）
+curl -s "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000688,day,,,140,qfq"
+```
+
+```python
+# 返回 JSON：data.<symbol>.qfqday = [[日期, 开, 收, 高, 低, 量], ...]
+import json, urllib.request
+UA = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}
+def kline(sym, n=140):
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sym},day,,,{n},qfq"
+    d = json.loads(urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25).read().decode("utf-8"))
+    data = d["data"][sym]
+    return data.get("qfqday") or data.get("day")     # 无复权数据时退回 day
+```
+
+**符号写法**：A 股/ETF/指数用 `sh000688`／`sh512480`／`sz300308` 这类带前缀代码；港股用 `hkHSI`／`hkHSTECH`。实测可取：科创50、半导体ETF、通信ETF、中际旭创、新易盛、中芯国际、恒指、恒生科技。
+
+**用途**：算「距高点回撤」「近 N 日低点/平台支撑」「破位确认」——例如 2026-09-14：科创50 距 6/30 高点 2207.86 回撤 30.8%、收在 40 日最低，半导体ETF 跌破 7 月低点 0.991。
+
+**东财 kline 仅作备用**（时通时不通，且**指数必失败**）：
 
 ```bash
 # secid：1.=上交所，0.=深交所；klt=101 日K/102 周K/103 月K；fqt=1 前复权；lmt=条数
@@ -146,8 +195,10 @@ curl -s "http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000688&fie
 
 ## 6. 取数自检
 
+- [ ] **A 股指数/ETF 与美股，是否先走了 `$SKILLS/ashare-data/fetch`**？（别一上来就手写 akshare、或绕开现成入口）
 - [ ] 数据是**实时价 / 收盘价 / EOD 滞后值**，标清楚了吗？
 - [ ] 标了**来源与时间戳**吗？
-- [ ] 美股没误用 akshare（会失败）？韩股没误用新浪个股（拿不到）？
-- [ ] 裸 curl 的 GBK 乱码，是否已用脚本或 `iconv` 处理？
-- [ ] 跨市场判断是否**多个来源交叉**（akshare + 新浪 + WebSearch），而不是单点？
+- [ ] 美股是否走的新浪源（`fetch us`）？**要实时/盘前价，有没有误用日线接口**？韩股有没有误用新浪个股（拿不到）？
+- [ ] 历史日K 是否走的腾讯 `fqkline`？（东财**指数**K 必失败）
+- [ ] 裸 curl 的 GBK 乱码，是否已用脚本或 `decode("gbk")` 处理？
+- [ ] 跨市场判断是否**多个来源交叉**（ashare-data + market_panel + WebSearch），而不是单点？
