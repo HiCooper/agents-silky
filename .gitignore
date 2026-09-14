@@ -72,3 +72,7 @@ $RECYCLE.BIN/
  backend/*/target/
  *.sql.bak
  docs/temp/
+
+# Python venv（skill 依赖环境，随机器重建，勿提交）
+.venv/
+__pycache__/

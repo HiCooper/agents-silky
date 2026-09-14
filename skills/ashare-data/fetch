@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 便捷入口：调用本 skill 自带虚拟环境中的 fetch.py
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$DIR/.venv/bin/python3" "$DIR/fetch.py" "$@"
