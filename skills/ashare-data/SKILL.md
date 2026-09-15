@@ -1,7 +1,7 @@
 ---
 name: ashare-data
-version: 1.4.0
-description: Fetch A-share index quotes (上证指数/深证成指/创业板指/科创50/沪深300等), ETF quotes (半导体/芯片/科技/科创50等), China/US/Japan/Germany/UK treasury yields (global bond via Sina), A50 index futures, margin trading / 融资融券 (两融余额、融资买入额、个股融资余额排行), and US index/stock daily quotes (标普/道指/纳指/费城半导体SOX、AVGO/NVDA/TSM等美股) via akshare. Use when the user asks for 指数点位、指数涨跌、A股行情、ETF行情、半导体ETF、国债收益率(10年美债/中债/日债/德债/英债)、两融余额/融资融券、美股行情/美股指数/费半/隔夜美股收盘，或需要这些标的的实时/最新行情数据.
+version: 1.5.0
+description: Fetch A-share index quotes (上证指数/深证成指/创业板指/科创50/沪深300等), ETF quotes (半导体/芯片/科技/科创50等), China/US/Japan/Germany/UK treasury yields (global bond via Sina), A50 index futures, margin trading / 融资融券 (两融余额、融资买入额、个股融资余额排行), market turnover / 两市成交额 (量能、放量缩量), and US index/stock daily quotes (标普/道指/纳指/费城半导体SOX、AVGO/NVDA/TSM等美股) via akshare. Use when the user asks for 指数点位、指数涨跌、A股行情、ETF行情、半导体ETF、国债收益率(10年美债/中债/日债/德债/英债)、两融余额/融资融券、两市成交额/成交量/量能、美股行情/美股指数/费半/隔夜美股收盘，或需要这些标的的实时/最新行情数据.
 name_zh: A股/美股行情数据
 category: finance-data
 ---
@@ -33,6 +33,9 @@ $SKILLS/ashare-data/fetch gbond 日本 德国       # 按国别（默认 10 年�
 $SKILLS/ashare-data/fetch gbond JP2YT DE2YT   # 直接给符号：<国别><期限>YT|MT
 $SKILLS/ashare-data/fetch a50                 # A50 期指（富时中国A50，全期限 + 持仓量，★ 标主力）
 $SKILLS/ashare-data/fetch margin              # 融资融券因子：沪深北余额 + 1/5/20日变动 + 维持担保比例
+$SKILLS/ashare-data/fetch turnover            # 两市成交额：盘中实时（沪+深）+ 对照上一交易日全天
+$SKILLS/ashare-data/fetch turnover eod 20260914    # 官方 EOD 口径
+$SKILLS/ashare-data/fetch turnover hist 20    # 近 20 日官方口径序列 + 5/20 日均量对比（放量/缩量）
 $SKILLS/ashare-data/fetch margin hist 30      # 近 30 日两融合计序列
 $SKILLS/ashare-data/fetch margin top 20260914 15   # 个股融资余额排行（拥挤度）
 $SKILLS/ashare-data/fetch margin ratio 沪市 中芯    # 标的证券融资/融券比例（保证金参数）
@@ -58,6 +61,7 @@ $SKILLS/ashare-data/fetch us stock AVGO NVDA  # 指定美股个股（日线；**
 | **A50 期指**（富时中国A50） | `fetch a50` | 东财外盘期货源；主力 `CN26U`（A50期指2609），含全期限与持仓量 |
 | **全球国债收益率** | `fetch gbond` | 新浪全球国债源（**akshare 未封装日/德**）；国别 `US/CN/JP/DE/GB/FR/IT/CA/AU`，期限 `1M~30Y` |
 | **融资融券（两融）** | `fetch margin` | 子命令：汇总 / hist / top / ratio；数据为交易所 T+1 口径（EOD） |
+| **两市成交额（量能）** | `fetch turnover` | 子命令：实时 / eod / hist；**深证成指成交额=深市全部**（非成分股口径） |
 | 美股半导体 | AVGO / NVDA / TSM / AMD / ASML / INTC | `fetch us semis` |
 
 ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设备」等关键词的，用 `fetch etf <关键词>` 一次拉全，再按成交额挑主流的那几只。
@@ -75,11 +79,17 @@ ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设�
 1. **美股能拿，但必须走新浪源**（2026-09 更正）：`us` 子命令用 `index_us_stock_sina` / `stock_us_daily`，实测稳定（0.1–0.6s），**费半 `.SOX` 与半导体个股日线都能拉到**。此前「美股不行」的说法**已作废**——被代理挡的是**东财**那几个接口（`stock_us_spot_em` / `stock_us_hist` / `famous_spot_em`，打 `63/69/72.push2*.eastmoney.com`，时通时不通），**不要依赖东财源**。
 2. **美股是日线，不是实时**：`us` 给的是截至**最近一个美股收盘**的日线。要**盘前/盘中实时价**（如「AVGO 盘前 −3%」），走新浪 `hq.sinajs.cn`（见 `economic-analysis-expert` skill 的 `scripts/market_panel.sh us`）或 WebSearch。
 3. **债收益率是 EOD**：`bond` / `gbond` 输出的是上一个交易日的收盘收益率（滞后一天）。盘中想拿「现在 10 年美债 4.768%」这类实时值，仍以用户提供的实时报价或 WebSearch 为准。
-4. **两融数据有三个单位陷阱**（`margin` 已统一折算为**亿元**）：`macro_china_market_margin_sh/sz` 是**元**、`stock_margin_bse` 是**万元**、`stock_margin_account_info` 是**亿元**。且两融是 **T+1 EOD**（当日收盘后由交易所公布，当天盘中拿不到当天值）。
-5. **`stock_margin_ratio_pa` 不是情绪因子**：它给的是**标的证券的融资/融券保证金比例**（能不能两融、杠杆档位），**不代表资金流入**；判断杠杆资金进出要看 `margin` 的**余额与买入额**。
-6. **日/德国债 akshare 没封装，走的是新浪端点**：akshare 只有中/美（`bond_zh_us_rate`）和**美国各期限**（`bond_gb_us_sina`，symbol_map 仅列美国）。日本/德国/英国等的底层是同一处新浪全球国债端点 `bond.finance.sina.com.cn/hq/gb/daily?symbol=JP10YT`，实测 `US/CN/JP/DE/GB/FR/IT` 各国各期限全通（约 1000 条日线），**`fetch gbond` 已封装**。所以「日债/德债能不能拿」的答案是**能，但别去 akshare 找**。
+4. **成交额只有「实时」和「EOD 官方」两条干净路，历史序列要按日循环**：盘中用 `stock_zh_index_spot_sina()`（`sh000001` + `sz399001` 的成交额，**深证成指与深证综指数值相同 = 深市全部**，不是成分股口径）；官方 EOD 用 `stock_sse_deal_daily(date)`（**亿元**）+ `stock_szse_summary(date)`（**元**）。**坑**：东财 `stock_zh_index_daily_em` 被本机代理挡；`stock_zh_index_daily_tx` 的 `amount` 列**其实是手数不是金额**；新浪/腾讯指数日K只有成交量。`fetch turnover hist` 已按日循环官方接口（实测 ~0.4s/日）。
+5. **两融数据有三个单位陷阱**（`margin` 已统一折算为**亿元**）：`macro_china_market_margin_sh/sz` 是**元**、`stock_margin_bse` 是**万元**、`stock_margin_account_info` 是**亿元**。且两融是 **T+1 EOD**（当日收盘后由交易所公布，当天盘中拿不到当天值）。
+6. **`stock_margin_ratio_pa` 不是情绪因子**：它给的是**标的证券的融资/融券保证金比例**（能不能两融、杠杆档位），**不代表资金流入**；判断杠杆资金进出要看 `margin` 的**余额与买入额**。
+7. **日/德国债 akshare 没封装，走的是新浪端点**：akshare 只有中/美（`bond_zh_us_rate`）和**美国各期限**（`bond_gb_us_sina`，symbol_map 仅列美国）。日本/德国/英国等的底层是同一处新浪全球国债端点 `bond.finance.sina.com.cn/hq/gb/daily?symbol=JP10YT`，实测 `US/CN/JP/DE/GB/FR/IT` 各国各期限全通（约 1000 条日线），**`fetch gbond` 已封装**。所以「日债/德债能不能拿」的答案是**能，但别去 akshare 找**。
 4. **`bond` 的美债列时通时不通**（实测 2026-09-15：08:45 三列全 `nan`，08:55 又正常返回 10 年 **4.97%** / 2 年 4.65% / 30 年 5.34%）。中债部分一直正常。**所以：美债优先用 `bond`，但必须核对是否为 `nan`**——是 nan 就转 WebSearch 或用户给的实时报价，别把 `nan` 当成「数据缺失」写进结论。
 5. **`etf` 是 ETF 全市场扫描，实测 18–20 秒**（按代码查单只同价）：盘中急用就直接给已知代码（`fetch etf 512480`），别用关键词扫描等 20 秒。
 6. **`a50` 走东财外盘期货源**，与 `etf`/`bond` 同属东财系，可能被本机代理间歇拦截；被挡时兜底用 `economic-analysis-expert` 的 `scripts/quote.py`（新浪 `hf_CHA50CFD`，免 venv、单合约 CFD）。另外**远月合约常无成交**，此时最新价/涨跌幅是空值——脚本已显示为 `-`，看主力合约即可。
 7. **本 skill 只给「最新/收盘报价」，不给历史日K**：要看趋势、回撤、支撑位，去 `economic-analysis-expert` 的 `references/data-sources.md` §4（走腾讯 `fqkline`；东财**指数**日K 在本机稳定失败，别用）。
-8. 数据源为第三方接口，盘中可能有秒级时延，收盘后最准。
+8. **全市场个股快照：两个源都别指望**（实测 2026-09-15）：
+   - `stock_zh_a_spot_em`（东财）**3/3 全 ProxyError**（`82.push2.eastmoney.com`），且源码是 `pz=100` **分页抓取**（≈56 次请求）——单页失败率被页数放大，本机基本不可用。
+   - `stock_zh_a_spot`（新浪）**首次可用**（5561 只、**含北交所** `bj` 前缀、合计成交额正确），但**紧接着就被限流**：再调返回 HTML（`JSONDecodeError: Can not decode value starting with character '<'`），继续重试会**长时间挂住**（实测两次重试均无响应）。
+   - **结论**：要成交额/量能走 `fetch turnover`（指数实时 + 官方 EOD），要个股批量走 `economic-analysis-expert` 的 `quote.py cn`（新浪单次批量，20 只以内稳定）；**不要为了成交额去拉全市场 5000 只**。
+   - 顺带一个口径校验：新浪**指数法**得沪深成交额（当日 10,568 亿），**全市场快照法**得沪深京（10,650 亿），差额约 82 亿 = **北交所成交额**。
+9. 数据源为第三方接口，盘中可能有秒级时延，收盘后最准。

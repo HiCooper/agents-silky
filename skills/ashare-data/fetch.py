@@ -9,6 +9,7 @@
     fetch.py bond                 中美国债收益率（最新，EOD 滞后一个交易日）
     fetch.py gbond [国别...]      全球国债收益率（美/中/日/德/英/法/意，EOD）
     fetch.py margin [子命令]      融资融券因子（汇总/历史/个股排行/标的比例）
+    fetch.py turnover [子命令]    两市成交额/量能（实时 / eod / hist）
     fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
@@ -23,6 +24,8 @@
     fetch.py gbond 日本 德国 JP2YT
     fetch.py margin
     fetch.py margin hist 30
+    fetch.py turnover
+    fetch.py turnover eod 20260914
     fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
@@ -39,6 +42,7 @@ warnings.filterwarnings("ignore")
 import akshare as ak
 import pandas as pd
 import requests
+from datetime import datetime
 
 
 # ---------------- 格式化工具 ----------------
@@ -520,6 +524,119 @@ def cmd_margin(args=None):
     sys.exit(1)
 
 
+# ---------------- 两市成交额（量能因子） ----------------
+#
+# 口径（2026-09-15 实测钉死）：
+#   盘中实时：stock_zh_index_spot_sina() → sh000001.成交额 + sz399001.成交额（单位：元）
+#             —— 深证成指与深证综指的成交额**完全相同**，即「深市全部」，不是成分股口径
+#   EOD 官方：stock_sse_deal_daily(date) 上交所股票（**亿元**）
+#             stock_szse_summary(date)  深交所股票（**元**）
+#   历史序列：**没有便宜接口**——东财 stock_zh_index_daily_em 被本机代理挡；新浪/腾讯指数日K
+#             只有成交量。⚠️ 坑：stock_zh_index_daily_tx 的 `amount` 列其实是**手数**，不是金额。
+#             要历史只能按日循环官方接口（hist 子命令；实测 8 天约 3 秒，够快）。
+
+def _sh_sz_spot():
+    """盘中：沪、深成交额（亿元）。"""
+    df = ak.stock_zh_index_spot_sina()
+    pick = lambda c: float(df.loc[df["代码"] == c, "成交额"].iloc[0]) / 1e8
+    return pick("sh000001"), pick("sz399001")
+
+
+def _sh_sz_eod(date):
+    """官方 EOD：沪、深股票成交额（亿元）。date 形如 20260914。"""
+    sh = ak.stock_sse_deal_daily(date=date)
+    sh_amt = float(sh.loc[sh["单日情况"] == "成交金额", "股票"].iloc[0])          # 已是亿元
+    sz = ak.stock_szse_summary(date=date)
+    sz_amt = float(sz.loc[sz["证券类别"] == "股票", "成交金额"].iloc[0]) / 1e8    # 元 → 亿元
+    return sh_amt, sz_amt
+
+
+def _recent_dates(n):
+    """最近 n 个交易日（含今日，来自腾讯上证指数日K）。"""
+    r = requests.get(f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=sh000001,day,,,{n + 2}",
+                     headers={"User-Agent": "Mozilla/5.0"}, timeout=15).json()
+    return [x[0].replace("-", "") for x in r["data"]["sh000001"]["day"]][-n:]
+
+
+def _fmt_date(d):
+    d = str(d)
+    return f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) >= 8 else d
+
+
+def _session_progress():
+    """A 股连续竞价时段（09:30–11:30、13:00–15:00）已过去的比例，用于粗算全天量。"""
+    now = datetime.now()
+    mins = now.hour * 60 + now.minute
+    am = max(0, min(mins, 11 * 60 + 30) - (9 * 60 + 30))
+    pm = max(0, min(mins, 15 * 60) - 13 * 60)
+    return max(0.02, min(1.0, (am + pm) / 240))
+
+
+def cmd_turnover(args=None):
+    """两市成交额（量能因子）。
+
+    fetch.py turnover            # 盘中实时：沪深成交额 + 相对上一交易日全天的进度
+    fetch.py turnover eod [日期]  # 官方 EOD 口径（默认最近交易日）
+    fetch.py turnover hist [N]   # 近 N 日官方口径序列 + 均量对比（默认 20；实测 ~0.4s/日）
+    """
+    args = list(args or [])
+    sub = args[0] if args else "now"
+
+    if sub in ("now", "盘中", "实时", ""):
+        sh, sz = _sh_sz_spot()
+        print(f"■ 两市成交额（盘中实时，{_fmt_date(_recent_dates(1)[-1])}）")
+        print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**合计 {sh + sz:,.1f} 亿**")
+        try:
+            prev = _recent_dates(2)[-2]
+            p_sh, p_sz = _sh_sz_eod(prev)
+            print(f"  上一交易日 {_fmt_date(prev)} 全天（官方）：{p_sh + p_sz:,.1f} 亿"
+                  f"（沪 {p_sh:,.1f} / 深 {p_sz:,.1f}）")
+            prog = _session_progress()
+            print(f"  已过时段 {prog * 100:.0f}%：按比例粗算全天 ≈ **{(sh + sz) / prog:,.0f} 亿**"
+                  f"（量级参考，尾盘通常加速，实际多高于此）")
+        except Exception as e:
+            print(f"  上一交易日对照取数失败：{type(e).__name__}")
+        return
+
+    if sub in ("eod", "收盘"):
+        date = args[1] if len(args) > 1 and args[1].isdigit() else _recent_dates(2)[-2]
+        sh, sz = _sh_sz_eod(date)
+        print(f"■ 两市成交额（官方 EOD，{_fmt_date(date)}）")
+        print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**合计 {sh + sz:,.1f} 亿**")
+        return
+
+    if sub in ("hist", "历史", "序列"):
+        n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 20
+        dates = _recent_dates(n + 20)[-n - 1:-1]
+        print(f"■ 逐日拉取官方口径 {len(dates)} 天…", file=sys.stderr)
+        rows = []
+        for d in dates:
+            try:
+                sh, sz = _sh_sz_eod(d)
+                rows.append((d, sh, sz, sh + sz))
+            except Exception:
+                rows.append((d, float("nan"), float("nan"), float("nan")))
+        vals = [r[3] for r in rows if r[3] == r[3]]
+        if not vals:
+            print("未取到数据"); sys.exit(1)
+        ma5 = sum(vals[-5:]) / len(vals[-5:])
+        ma20 = sum(vals[-20:]) / len(vals[-20:])
+        print(f"{'日期':<13}{'沪(亿)':>11}{'深(亿)':>11}{'合计(亿)':>12}{'环比':>10}")
+        for i, (d, sh, sz, tot) in enumerate(rows):
+            chg = "—"
+            if i > 0 and rows[i - 1][3] == rows[i - 1][3] and tot == tot:
+                chg = f"{(tot / rows[i - 1][3] - 1) * 100:+.1f}%"
+            print(f"{_fmt_date(d):<13}{sh:>11,.1f}{sz:>11,.1f}{tot:>12,.1f}{chg:>10}")
+        last = vals[-1]
+        print(f"\n  5日均 {ma5:,.0f} 亿｜20日均 {ma20:,.0f} 亿｜最新 {last:,.0f} 亿"
+              f"（较5日均 {(last / ma5 - 1) * 100:+.1f}%，较20日均 {(last / ma20 - 1) * 100:+.1f}%）")
+        print("  读数：显著高于均量=放量（趋势可信度高）；持续低于均量=缩量（反弹缺增量、破位易阴跌）。")
+        return
+
+    print(__doc__)
+    sys.exit(1)
+
+
 # ---------------- 入口 ----------------
 
 def main():
@@ -535,6 +652,7 @@ def main():
         "bond": cmd_bond,
         "gbond": cmd_gbond,
         "margin": cmd_margin,
+        "turnover": cmd_turnover,
         "a50": cmd_a50,
         "us": cmd_us,
     }
