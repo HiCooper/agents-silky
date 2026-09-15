@@ -39,7 +39,7 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 | **美股盘前/盘后（延长时段）/ 任意美股个股** | 本 skill `scripts/quote.py`（新浪 `gb_`，**纯标准库无需 venv**）——**延长时段 akshare 拿不到，只能用这条**（见坑 2） | `python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（默认夜盘一屏）｜`quote.py us COHR MU`｜`quote.py us --basket optical` |
 | **多只 A 股个股全量字段**（开/昨收/收/高/低/额） | `quote.py cn`——**仅个股**；**指数/ETF 不在此列，仍走 `ashare-data/fetch index\|etf`**（脚本对指数/ETF 代码会自动提示） | `quote.py cn 300308 300502`｜原始字段法见 `references/data-sources.md` §3.1 |
 | **历史日K**（判趋势 / 破位 / 支撑） | 腾讯 `fqkline`（**东财 K 线不可用，见坑 4**） | 见 `references/data-sources.md` §4 |
-| **快讯（财联社电报，首选）** | `ashare-data`（akshare `stock_info_global_cls`，实测 0.1s） | `$SKILLS/ashare-data/fetch news 重点`｜`fetch news 全部`｜`fetch news 全部 <关键词>` |
+| **快讯（财联社电报，首选）** | `ashare-data`（akshare `stock_info_global_cls`，实测 0.1s） | `$SKILLS/ashare-data/fetch news`（默认重点频道）｜`fetch news <关键词>`｜`fetch news 全部` |
 | 格隆汇 7×24（补充，条数更多、覆盖更杂） | 项目自带 `glh_live.py` | `python3 glh_live.py --limit 25` |
 | **10Y 美债实时、隔夜美股现金收盘解读、韩国个股、新闻催化剂** | WebSearch / WebFetch | 按需 |
 | **M1/M2 等宏观** | `update_m1m2.py`（用 ashare-data 的 venv 跑） | 见 `references/data-sources.md` |

@@ -10,7 +10,8 @@
     fetch.py gbond [国别...]      全球国债收益率（美/中/日/德/英/法/意，EOD）
     fetch.py margin [子命令]      融资融券因子（汇总/历史/个股排行/标的比例）
     fetch.py turnover [子命令]    两市成交额/量能（实时 / eod / hist）
-    fetch.py news [全部|重点] [关键词]  财联社电报快讯
+    fetch.py news [关键词]        财联社电报快讯（**默认只取「重点」频道**）
+    fetch.py news 全部 [关键词]    切到「全部」频道（最近 20 条）
     fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
@@ -27,7 +28,7 @@
     fetch.py margin hist 30
     fetch.py turnover
     fetch.py turnover eod 20260914
-    fetch.py news 重点
+    fetch.py news
     fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
@@ -722,14 +723,15 @@ def cmd_turnover(args=None):
 # 局限：单次只返回最近 20 条（要更长历史得自己按时间落盘）；标题可能为空（用内容兜底）。
 
 def cmd_news(args=None):
-    """财联社电报（快讯）。
+    """财联社电报（快讯）。**默认只取「重点」频道**（使用者偏好：只看重点）。
 
-    fetch.py news              # 全部（最近 20 条）
-    fetch.py news 重点          # 重点频道（当日重要）
-    fetch.py news 全部 关键词    # 关键词过滤（标题或内容命中）
+    fetch.py news              # 重点频道（当日重要，通常几条）
+    fetch.py news 关键词        # 在重点频道里按关键词过滤
+    fetch.py news 全部          # 切到全部频道（最近 20 条）
+    fetch.py news 全部 关键词    # 在全部频道里过滤
     """
     args = list(args or [])
-    sym = "全部"
+    sym = "重点"
     if args and args[0] in ("全部", "重点", "all", "key"):
         sym = {"all": "全部", "key": "重点"}.get(args[0], args[0])
         args = args[1:]
@@ -741,7 +743,8 @@ def cmd_news(args=None):
         df = df[m]
     print(f"■ 财联社电报（{sym}）{len(df)} 条" + (f"｜过滤「{kw}」" if kw else ""))
     if df.empty:
-        print("  无匹配（单次仅返回最近 20 条，关键词太偏就换词或改看『全部』）")
+        print("  无匹配。注意：「重点」频道当日通常只有几条，关键词很容易不命中——"
+              "要用关键词搜全量请显式切频道：`fetch news 全部 <关键词>`")
         return
     for _, r in df.iterrows():
         ts = f"{str(r['发布日期']).strip()} {str(r['发布时间']).strip()}"

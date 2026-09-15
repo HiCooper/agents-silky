@@ -1,6 +1,6 @@
 ---
 name: ashare-data
-version: 1.7.0
+version: 1.7.1
 description: Fetch A-share index quotes (上证指数/深证成指/创业板指/科创50/沪深300等), ETF quotes (半导体/芯片/科技/科创50等), China/US/Japan/Germany/UK treasury yields (global bond via Sina), A50 index futures, margin trading / 融资融券 (两融余额、融资买入额、个股融资余额排行), market turnover / 两市成交额 (量能、放量缩量), CLS telegraph news / 财联社电报快讯, and US index/stock daily quotes (标普/道指/纳指/费城半导体SOX、AVGO/NVDA/TSM等美股) via akshare. Use when the user asks for 指数点位、指数涨跌、A股行情、ETF行情、半导体ETF、国债收益率(10年美债/中债/日债/德债/英债)、两融余额/融资融券、两市成交额/成交量/量能、财联社快讯/电报/快讯、美股行情/美股指数/费半/隔夜美股收盘，或需要这些标的的实时/最新行情数据.
 name_zh: A股/美股行情数据
 category: finance-data
@@ -36,9 +36,9 @@ $SKILLS/ashare-data/fetch margin              # 融资融券因子：沪深北�
 $SKILLS/ashare-data/fetch turnover            # 两市成交额（指数法：沪+深+北证50）+ 对照上一交易日全天
 $SKILLS/ashare-data/fetch turnover eod 20260914    # 官方 EOD 口径
 $SKILLS/ashare-data/fetch turnover hist 20    # 近 20 日官方口径序列 + 5/20 日均量对比（放量/缩量）
-$SKILLS/ashare-data/fetch news                # 财联社电报（全部，最近 20 条）
-$SKILLS/ashare-data/fetch news 重点            # 重点频道（当日重要，通常只有几条 → 催化剂扫描首选）
-$SKILLS/ashare-data/fetch news 全部 成交额      # 关键词过滤（标题或内容命中）
+$SKILLS/ashare-data/fetch news                # 财联社电报·**重点频道**（默认，当日重要，通常几条）
+$SKILLS/ashare-data/fetch news 成交额          # 在重点频道里按关键词过滤
+$SKILLS/ashare-data/fetch news 全部            # 切到全部频道（最近 20 条）；可再跟关键词
 $SKILLS/ashare-data/fetch margin hist 30      # 近 30 日两融合计序列
 $SKILLS/ashare-data/fetch margin top 20260914 15   # 个股融资余额排行（拥挤度）
 $SKILLS/ashare-data/fetch margin ratio 沪市 中芯    # 标的证券融资/融券比例（保证金参数）
@@ -65,7 +65,7 @@ $SKILLS/ashare-data/fetch us stock AVGO NVDA  # 指定美股个股（日线；**
 | **全球国债收益率** | `fetch gbond` | 新浪全球国债源（**akshare 未封装日/德**）；国别 `US/CN/JP/DE/GB/FR/IT/CA/AU`，期限 `1M~30Y` |
 | **融资融券（两融）** | `fetch margin` | 子命令：汇总 / hist / top / ratio；数据为交易所 T+1 口径（EOD） |
 | **两市成交额（量能）** | `fetch turnover` | **指数法**（沪 `sh000001` / 深 `sz399001` / 北证50 `bj899050`）；子命令：实时 / eod / hist |
-| **快讯（财联社电报）** | `fetch news` | 频道 `全部` / `重点`；实测 0.1s、稳定；单次仅最近 20 条 |
+| **快讯（财联社电报）** | `fetch news` | **默认「重点」频道**（只看重点）；`news 全部` 切全量；实测 0.1s、稳定；单次仅最近 20 条 |
 | 美股半导体 | AVGO / NVDA / TSM / AMD / ASML / INTC | `fetch us semis` |
 
 ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设备」等关键词的，用 `fetch etf <关键词>` 一次拉全，再按成交额挑主流的那几只。
@@ -96,6 +96,6 @@ ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设�
    - ⚠️ **单位陷阱**：`s_` 简版的成交额**沪深是万元、北证50 是元**（差 10000 倍）。所以 `fetch turnover` 统一用**全量字段**（field 9，一律为元），别自己拿 `s_` 混算。
    - **口径**：`沪深合计` **不含**北交所；北证50 的成交额近似北交所全部（实测当日 83.9 亿 vs 快照法推出的 ≈82 亿，因为北交所成交集中在权重股），要含京自行相加。
    - 个股批量是另一件事，走 `economic-analysis-expert` 的 `quote.py cn`（新浪单次批量，20 只以内稳定）。
-9. **财联社电报 `fetch news`**：走财联社当前网页端电报接口，实测 **0.1s**、无需鉴权。注意三点：① **单次只返回最近 20 条**，要更长历史得自己按时间落盘；② `重点` 频道当日通常只有几条，是**催化剂扫描的首选**（`全部` 噪声大）；③ **标题可能为空**（只有正文），别按标题做去重或过滤。
+9. **财联社电报 `fetch news`**：走财联社当前网页端电报接口，实测 **0.1s**、无需鉴权。注意三点：① **单次只返回最近 20 条**，要更长历史得自己按时间落盘；② **默认就是「重点」频道**（当日通常只有几条，信噪比高）；要搜全量关键词得显式写 `news 全部 <关键词>`；③ **标题可能为空**（只有正文），别按标题做去重或过滤。
 10. **日内成交额折算别用等比**：A 股成交额**前重后轻**——实测 2026-09-14 半日 11,045 亿 / 全天 16,311 亿 = **67.7%**。用「已过分钟/240」等比外推会把半日量高估约 35%（曾据此把「半日缩量 475 亿」误读成「放量 2.1 万亿」）。`fetch turnover` 已按典型日内分布曲线折算并标注占比；**结论性判断请以财联社「午评/收评」的半日与全天口径为准**。
 11. 数据源为第三方接口，盘中可能有秒级时延，收盘后最准。
