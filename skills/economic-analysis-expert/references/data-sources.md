@@ -56,6 +56,13 @@ $SKILLS/ashare-data/fetch gbond           # 全球国债收益率 EOD（美/中/
 $SKILLS/ashare-data/fetch margin          # 融资融券因子（沪深北余额/1-5-20日变动/维持担保比例）
 $SKILLS/ashare-data/fetch margin top 15   # 个股融资余额排行（拥挤度第二维：谁最容易被强平）
 $SKILLS/ashare-data/fetch turnover        # 两市成交额（**指数法**：沪+深+北证50；实时 / eod / hist）
+
+# —— 跨市场与规模归一（走 akshare，注意源）——
+# 韩国 KOSPI 历史：ak.index_global_hist_sina(symbol="首尔综合指数")  ← 新浪源稳定；东财 index_global_hist_em 被代理挡
+# KOSDAQ：只有实时（hq.sinajs.cn 的 b_KOSDAQ），无历史接口
+# A50：只有实时（futures_global_spot_em），历史接口 futures_global_hist_em 走 push2his 连不上
+# 流通市值（算杠杆率/换手率的分母）：stock_sse_deal_daily(date) 的「流通市值」行（亿元）
+#                                + stock_szse_summary(date) 的「股票」行 流通市值（元）——与取成交额同一对请求，零额外成本
 $SKILLS/ashare-data/fetch a50             # A50 期指（东财外盘期货源，全期限 + 持仓量，★ 标主力）
 
 # —— 美股（日线，新浪源）——
