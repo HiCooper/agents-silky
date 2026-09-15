@@ -42,6 +42,7 @@ warnings.filterwarnings("ignore")
 import akshare as ak
 import pandas as pd
 import requests
+import urllib.request
 from datetime import datetime
 
 
@@ -114,13 +115,62 @@ def cmd_a50(_args=None):
               f"{'  ★主力' if r['代码'] == main else ''}")
 
 
+# ---------------- 轻量新浪行情（兜底主通道） ----------------
+#
+# 为什么需要：akshare 的 `stock_zh_index_spot_sina()` 打的是新浪 **bulk** 接口
+# （vip.stock.finance.sina.com.cn 一族的 JSON），**极易被限流**——2026-09-15 实测：
+# 连续调用全市场快照后，bulk 接口开始返回 HTML，报 `JSONDecodeError: Can not decode
+# value starting with character '<'`，连 `fetch turnover` 都被带崩。
+# 而 `hq.sinajs.cn`（单次小列表请求）**不受影响**，是全工具链里最稳的一条通道
+# （economic-analysis-expert 的 market_panel.sh / quote.py 也用它）。
+_SINA_HQ = "https://hq.sinajs.cn/list="
+
+
+def _sina_hq(codes):
+    """一次请求取多个代码，返回 {symbol: [字段...]}。需带 Referer，返回 GBK。"""
+    req = urllib.request.Request(_SINA_HQ + ",".join(codes),
+                                 headers={"User-Agent": "Mozilla/5.0",
+                                          "Referer": "https://finance.sina.com.cn"})
+    raw = urllib.request.urlopen(req, timeout=15).read().decode("gbk", "ignore")
+    out = {}
+    for line in raw.strip().split("\n"):
+        if "hq_str_" not in line or "=" not in line:
+            continue
+        sym = line.split("hq_str_")[-1].split("=")[0]
+        out[sym] = line.split('"')[1].split(",") if '"' in line else []
+    return out
+
+
 # ---------------- 指数 ----------------
 
 _INDEX_COLS = ["代码", "名称", "最新价", "涨跌幅", "涨跌额", "今开", "最高", "最低", "昨收", "成交额"]
 
+# 核心指数（与 `fetch indices` 输出一致）——bulk 接口被限流时用它走 hq.sinajs.cn 兜底
+_CORE_INDEX = [("sh000001", "上证指数"), ("sz399001", "深证成指"), ("sz399006", "创业板指"),
+               ("sh000688", "科创50"), ("sh000300", "沪深300"), ("sh000016", "上证50"),
+               ("sh000905", "中证500"), ("sh000852", "中证1000")]
+
 
 def _load_indices():
-    return ak.stock_zh_index_spot_sina()
+    """核心指数。优先 akshare bulk；被限流/被挡时退回 hq.sinajs.cn 全量字段自建。"""
+    try:
+        df = ak.stock_zh_index_spot_sina()
+        if df is not None and not df.empty:
+            return df
+        raise RuntimeError("empty")
+    except Exception:
+        rows = []
+        data = _sina_hq([c for c, _ in _CORE_INDEX])
+        for code, nm in _CORE_INDEX:
+            f = data.get(code, [])
+            if len(f) < 10:
+                continue
+            prev, cur = float(f[2]), float(f[3])
+            rows.append({"代码": code, "名称": f[0] or nm, "最新价": cur,
+                         "涨跌幅": (cur / prev - 1) * 100 if prev else float("nan"),
+                         "涨跌额": cur - prev, "今开": float(f[1]), "最高": float(f[4]),
+                         "最低": float(f[5]), "昨收": prev, "成交额": float(f[9])})
+        return pd.DataFrame(rows)
 
 
 def _resolve_index(df, query):
@@ -536,10 +586,18 @@ def cmd_margin(args=None):
 #             要历史只能按日循环官方接口（hist 子命令；实测 8 天约 3 秒，够快）。
 
 def _sh_sz_spot():
-    """盘中：沪、深成交额（亿元）。"""
-    df = ak.stock_zh_index_spot_sina()
-    pick = lambda c: float(df.loc[df["代码"] == c, "成交额"].iloc[0]) / 1e8
-    return pick("sh000001"), pick("sz399001")
+    """盘中：沪、深成交额（亿元）。
+
+    优先 `hq.sinajs.cn` 的 `s_` 简版（1 次请求、自带成交额[字段 5，万元]、不受 bulk 限流）；
+    失败才退回 akshare 的 bulk 接口。两者实测同值（2026-09-15 11:03：5050.81 + 5517.58 亿）。
+    """
+    try:
+        d = _sina_hq(["s_sh000001", "s_sz399001"])
+        return float(d["s_sh000001"][5]) / 1e4, float(d["s_sz399001"][5]) / 1e4   # 万元 → 亿元
+    except Exception:
+        df = ak.stock_zh_index_spot_sina()
+        pick = lambda c: float(df.loc[df["代码"] == c, "成交额"].iloc[0]) / 1e8
+        return pick("sh000001"), pick("sz399001")
 
 
 def _sh_sz_eod(date):
