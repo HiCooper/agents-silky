@@ -142,6 +142,33 @@ raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=15
 
 **三个注意**：① 必须带 `Referer`，否则被拒；② 返回 **GBK**，要 `decode("gbk")`；③ **简版符号 `s_sh000001` 的字段序完全不同**（`名称,最新,涨跌额,涨跌幅,成交量,成交额`），别和全量字段混用——简版适合「只要指数涨跌幅」，全量适合要成交额与高低点。
 
+### 3.2 通用报价器 `scripts/quote.py`（**A50 / 美股夜盘 / 任意代码，首选**）
+
+`market_panel.sh` 是**固定面板**：不含 A50，也不支持任意美股代码。要抓「A50 + 美股延长时段价 + 指定个股」时用 `quote.py`——**纯标准库，系统 `python3` 直接跑，不需要 venv**，所以别再每次现写脚本。
+
+```bash
+Q=$SKILLS/economic-analysis-expert/scripts/quote.py
+python3 $Q                       # 默认 = night：美股指 + A50 + ES/NQ + 油金 + 美元/人民币 一屏
+python3 $Q us COHR GLW MU NOW    # 任意美股：收盘价 + 涨跌幅 + 延长时段(盘前/盘后)价与时刻
+python3 $Q us --basket optical   # 预设篮子：semi / optical / memory / software / mega
+python3 $Q cn 000688 512480 300308   # A股：指数/ETF/个股（指数走白名单，见下）
+python3 $Q hk 00981 00700        # 港股
+python3 $Q raw hf_CL gb_mu       # 逃生口：直接给新浪符号，打印全部字段（改版时先跑它核对）
+python3 $Q --json us MU          # JSON，便于下游处理
+```
+
+**预设篮子**：`semi`（AVGO/NVDA/TSM/AMD/ASML/INTC/MU/LRCX/AMAT/KLAC/ARM/SMCI）、`optical`（COHR/GLW/LITE/CIEN/AAOI/MRVL/ANET/NOK，光通信）、`memory`（MU/WDC/SNDK/STX）、`software`（MSFT/GOOGL/META/AMZN/NOW/ADBE/CRM/SNOW/PLTR/ORCL）、`mega`（七巨头）。
+
+**实测（2026-09-15 08:48，盘前）**：`night` 一屏给出费半 -5.86%、A50 +0.02%、纳指期货 +0.10%、WTI 102.6、黄金 4335、美元指数 99.53。
+
+**三个使用注意**：
+
+1. **`cn` 的指数代码走白名单**——000xxx 在沪深两市会撞车：`000688` 深市是国城矿业、`000001` 深市是平安银行。脚本对 `000001/000016/000010/000300/000688/000852/000905/399001/399005/399006` 直接映射到正确指数，其余仍按 5/6/9→sh、0/1/2/3→sz。**输出里始终显示解析到的名称，发现张冠李戴就是代码写错了。**
+2. **`night` 的汇率不给涨跌幅**：新浪 `DINIW`/`USDCNY` 的「昨收」字段语义未经验证（USDCNY 用该字段反推得 +0.22%，与媒体「在岸人民币较上周五夜盘收盘跌 6 点」不符），宁可不给也不给错。另：**USDCNY 境内闭市后不再更新**（早盘 08:48 显示的还是 02:52 的时点），盘前要看人民币得用 09:15 中间价或离岸价。
+3. **「延长时段」列就是盘前/盘后价**，具体是盘前还是盘后看同列的**时刻**（`Sep 14 07:59PM EDT` = 盘后；`AM EDT` = 盘前）；指数没有延长时段数据，显示 `—`。
+
+**字段序速查**（脚本 docstring 里有完整版；新浪改版时跑 `raw` 核对）：`gb_*` = [1]现价 [2]涨跌幅 [4]涨跌额 [6]高 [7]低 [8]52周高 [9]52周低 [21]延长时段价 [22]延长时段涨跌幅 [24]延长时段时刻 [26]昨收；`hf_*` = [0]现价 [4]高 [5]低 [6]时间 [7]昨结 [8]今开；`DINIW`/`USDCNY` = [1]/[8]现价 [6]高 [7]低 [0]时间。
+
 **拿不到 / 不可用**（别浪费时间）：`gb_$tnx`／`gb_$ust10y`（10Y 美债实时）、`int_sox`、`znb_N225`／`b_N225`（日经）、`znb_005930`／`000660`（韩国个股）、`b_TWSE`（返回 2025 年旧值，勿用）。
 
 **编码**：新浪返回 **GBK**，脚本已 `iconv -f gbk -t utf-8`；裸 `curl` 会乱码。
