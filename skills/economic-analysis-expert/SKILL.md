@@ -34,9 +34,9 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 | **A股指数 / ETF / 中美债收益率** | `ashare-data`（**首选**） | `$SKILLS/ashare-data/fetch indices`｜`fetch index <代码\|名称>`｜`fetch etf <代码\|关键词>`｜`fetch bond` |
 | **美股指数 / 费半 / 半导体篮子 / 任意美股**（日线） | `ashare-data`（**首选**） | `$SKILLS/ashare-data/fetch us`｜`fetch us semis`｜`fetch us stock AVGO NVDA MU` |
 | 同上（需要在 Python 里内嵌调用时） | 本 skill `scripts/us_data.py`（与 `fetch us` 同源等价） | `$PY $SKILLS/economic-analysis-expert/scripts/us_data.py indices` |
-| **跨市场实时面板**（港股、韩国、美股期货、油金、美元、**美股盘前/实时价**） | 本 skill `scripts/market_panel.sh`（新浪，固定面板） | `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all` |
-| **A50 / 美股夜盘（盘前盘后）/ 任意美股个股** | 本 skill `scripts/quote.py`（新浪，**纯标准库无需 venv**，支持任意代码） | `python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（默认夜盘一屏）｜`quote.py us COHR MU`｜`quote.py us --basket optical`｜`quote.py cn 000688 512480` |
-| **多只 A 股个股全量字段**（开/昨收/收/高/低/额） | `quote.py cn`（推荐）或新浪批量自取 | `quote.py cn 300308 300502`｜见 `references/data-sources.md` §3.1 |
+| **跨市场实时面板**（港股、韩国、美股期货、油金、美元、**美股盘前/实时价**） | 本 skill `scripts/market_panel.sh`（新浪，固定面板；**A 股部分仅作一站式快照，正式取数走 `ashare-data`**） | `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all` |
+| **A50 / 美股夜盘（盘前盘后）/ 任意美股个股** | 本 skill `scripts/quote.py`（新浪，**纯标准库无需 venv**，支持任意代码） | `python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（默认夜盘一屏）｜`quote.py us COHR MU`｜`quote.py us --basket optical` |
+| **多只 A 股个股全量字段**（开/昨收/收/高/低/额） | `quote.py cn`——**仅个股**；**指数/ETF 不在此列，仍走 `ashare-data/fetch index\|etf`**（脚本对指数/ETF 代码会自动提示） | `quote.py cn 300308 300502`｜原始字段法见 `references/data-sources.md` §3.1 |
 | **历史日K**（判趋势 / 破位 / 支撑） | 腾讯 `fqkline`（**东财 K 线不可用，见坑 4**） | 见 `references/data-sources.md` §4 |
 | **格隆汇 7×24 快讯** | 项目自带 `glh_live.py` | `python3 glh_live.py --limit 25` |
 | **10Y 美债实时、隔夜美股现金收盘解读、韩国个股、新闻催化剂** | WebSearch / WebFetch | 按需 |
