@@ -37,6 +37,7 @@ $SKILLS/ashare-data/fetch index 科创50    # 支持名称关键词
 $SKILLS/ashare-data/fetch etf 半导体       # 按关键词搜 ETF（⚠️ 全市场扫描，实测 18–20s）
 $SKILLS/ashare-data/fetch etf 512480      # 按代码查 ETF（同样 ~18s）
 $SKILLS/ashare-data/fetch bond            # 中债收益率（EOD，滞后一日）；⚠️ 美债列时通时不通
+$SKILLS/ashare-data/fetch gbond           # 全球国债收益率 EOD（美/中/日/德/英/法/意；akshare 未封装日德）
 $SKILLS/ashare-data/fetch a50             # A50 期指（东财外盘期货源，全期限 + 持仓量，★ 标主力）
 
 # —— 美股（日线，新浪源）——
@@ -218,7 +219,8 @@ curl -s "http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000688&fie
 
 ## 5. WebSearch / WebFetch 补缺（本地接口拿不到的）
 
-- **10Y 美债实时收益率**（新浪 `gb_$tnx` 不可用）→ WebSearch「10年期美债收益率 最新 <日期>」。
+- **全球国债收益率的「实时」值**（新浪 `gb_$tnx` 不可用）→ WebSearch。**先分清实时还是 EOD**：
+  **EOD 收盘值走本地**——`ashare-data/fetch gbond`（美/中/日/德/英/法/意，含日变动与 5 日变动，实测 2026-09-14 收盘：美 10Y 4.983%、日 10Y 2.999%、德 10Y 3.521%、英 10Y 5.370%、中 10Y 1.686%）；**只有盘中实时值才需要 WebSearch**。
 - **隔夜美股现金收盘的解读与催化**（强非农、CPI、美联储官员表态）→ WebSearch。
 - **韩国个股**（三星电子 005930、SK海力士 000660；Yahoo 接口被挡）→ WebSearch 韩媒快讯「삼성전자」「SK하이닉스」。
 - **政策 / 事件预告**（国新办发布会、经济数据前瞻）→ WebSearch。

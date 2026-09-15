@@ -7,6 +7,7 @@
     fetch.py indices              核心指数一览
     fetch.py etf     <关键词或代码> ETF 实时行情（按名称模糊搜索）
     fetch.py bond                 中美国债收益率（最新，EOD 滞后一个交易日）
+    fetch.py gbond [国别...]      全球国债收益率（美/中/日/德/英/法/意，EOD）
     fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
@@ -18,6 +19,7 @@
     fetch.py etf 半导体
     fetch.py etf 512480
     fetch.py bond
+    fetch.py gbond 日本 德国 JP2YT
     fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
@@ -32,6 +34,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import akshare as ak
+import requests
 
 
 # ---------------- 格式化工具 ----------------
@@ -210,7 +213,12 @@ def cmd_etf(args):
 
 # ---------------- 债券 ----------------
 
-def cmd_bond(_args):
+def cmd_bond(args):
+    """bond          中美国债（akshare bond_zh_us_rate，EOD）
+    bond global   全球国债收益率（新浪全球国债源，见 cmd_gbond）
+    """
+    if args and args[0] in ("global", "全球", "gbond"):
+        return cmd_gbond(args[1:])
     b = ak.bond_zh_us_rate()
     last = b.iloc[-1]
     print(f"日期：{last['日期']}（EOD，滞后一个交易日）")
@@ -222,6 +230,77 @@ def cmd_bond(_args):
         _f(last.get("美国国债收益率10年"), 4),
         _f(last.get("美国国债收益率2年"), 4),
         _f(last.get("美国国债收益率30年"), 4)))
+
+
+# ---------------- 全球国债收益率（新浪全球国债源） ----------------
+#
+# akshare 只有中/美（bond_zh_us_rate）与**美国各期限**（bond_gb_us_sina，symbol_map 仅列美国）；
+# 日本/德国/英国等它**没有封装**。但底层是同一处新浪端点，实测 US/CN/JP/DE/GB/FR/IT 全通：
+#   https://bond.finance.sina.com.cn/hq/gb/daily?symbol=JP10YT   （约 1000 条日线，含最新收盘）
+# 所以这里直接打该端点，把日/德/英等国补齐。
+
+_GBOND_LABEL = {"US": "美国", "CN": "中国", "JP": "日本", "DE": "德国",
+                "GB": "英国", "FR": "法国", "IT": "意大利", "CA": "加拿大", "AU": "澳大利亚"}
+_GBOND_DEFAULT = ["US10YT", "CN10YT", "JP10YT", "DE10YT", "GB10YT"]
+
+
+def _gbond_fetch(symbol):
+    r = requests.get(f"https://bond.finance.sina.com.cn/hq/gb/daily?symbol={symbol}",
+                     headers={"User-Agent": "Mozilla/5.0",
+                              "Referer": "https://stock.finance.sina.com.cn/"}, timeout=15)
+    data = r.json()["result"]["data"]
+    return [(x["d"], float(x["c"])) for x in data]
+
+
+def _gbond_resolve(token):
+    """'日本'/'jp' → JP10YT；'JP2YT'/'DE10YT' 之类的完整符号原样返回。"""
+    t = token.strip()
+    up = t.upper()
+    # 完整符号：<两位国别><数字期限>YT|MT，如 US10YT / JP2YT / DE30YT
+    if len(up) >= 5 and up[:2] in _GBOND_LABEL and up[-2:] in ("YT", "MT") and up[2:-2].isdigit():
+        return up
+    code = up if up in _GBOND_LABEL else None       # us / jp / de ...
+    if code is None:
+        for k, v in _GBOND_LABEL.items():            # 美国 / 日本 ...
+            if v == t:
+                code = k
+                break
+    if code is None:
+        raise ValueError(f"认不出「{token}」，可用国别：{'/'.join(_GBOND_LABEL)}（默认 10 年），"
+                         f"或直接给符号如 JP2YT/DE10YT")
+    return code + "10YT"
+
+
+def _gbond_name(sym):
+    """JP10YT → 日本10Y；US2YT → 美国2Y；DE6MT → 德国6M"""
+    cty, tenor, unit = _GBOND_LABEL.get(sym[:2], sym[:2]), sym[2:-2], sym[-2]
+    return f"{cty}{tenor}{unit}"
+
+
+def cmd_gbond(args=None):
+    """全球国债收益率（新浪全球国债源，EOD，约 1000 条日线）。
+
+    fetch.py gbond                # 默认：美/中/日/德/英 10 年
+    fetch.py gbond 日本 德国       # 按国别（默认 10 年）
+    fetch.py gbond JP2YT DE2YT    # 直接给符号：<国别><期限>YT|MT
+    """
+    tokens = list(args) if args else _GBOND_DEFAULT
+    try:
+        symbols = [_gbond_resolve(t) for t in tokens]
+    except ValueError as e:
+        print(e)
+        sys.exit(1)
+    print(f"{'名称':<11}{'符号':<9}{'最新日期':<13}{'收益率':>9}{'日变动':>9}{'5日变动':>10}{'样本起':>12}")
+    for sym in symbols:
+        try:
+            rows = _gbond_fetch(sym)
+            last_d, last_v = rows[-1]
+            prev_v = rows[-2][1] if len(rows) >= 2 else last_v
+            f5_v = rows[-6][1] if len(rows) >= 6 else rows[0][1]
+            print(f"{_pad(_gbond_name(sym), 11)}{_pad(sym, 9)}{_pad(last_d, 13)}{last_v:>8.3f}%"
+                  f"{(last_v - prev_v) * 100:>+8.1f}bp{(last_v - f5_v) * 100:>+9.1f}bp{rows[0][0]:>12}")
+        except Exception as e:
+            print(f"{_pad(_gbond_name(sym), 11)}{_pad(sym, 9)}FAILED  {type(e).__name__}")
 
 
 # ---------------- 美股（新浪源） ----------------
@@ -295,6 +374,7 @@ def main():
         "indices": cmd_indices,
         "etf": cmd_etf,
         "bond": cmd_bond,
+        "gbond": cmd_gbond,
         "a50": cmd_a50,
         "us": cmd_us,
     }
