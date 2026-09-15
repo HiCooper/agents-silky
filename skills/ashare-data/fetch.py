@@ -10,6 +10,7 @@
     fetch.py gbond [国别...]      全球国债收益率（美/中/日/德/英/法/意，EOD）
     fetch.py margin [子命令]      融资融券因子（汇总/历史/个股排行/标的比例）
     fetch.py turnover [子命令]    两市成交额/量能（实时 / eod / hist）
+    fetch.py news [全部|重点] [关键词]  财联社电报快讯
     fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
@@ -26,6 +27,7 @@
     fetch.py margin hist 30
     fetch.py turnover
     fetch.py turnover eod 20260914
+    fetch.py news 重点
     fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
@@ -623,13 +625,26 @@ def _fmt_date(d):
     return f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) >= 8 else d
 
 
-def _session_progress():
-    """A 股连续竞价时段（09:30–11:30、13:00–15:00）已过去的比例，用于粗算全天量。"""
-    now = datetime.now()
-    mins = now.hour * 60 + now.minute
-    am = max(0, min(mins, 11 * 60 + 30) - (9 * 60 + 30))
-    pm = max(0, min(mins, 15 * 60) - 13 * 60)
-    return max(0.02, min(1.0, (am + pm) / 240))
+# 日内成交额累计占比（分钟 → 占比）。用于把「当前累计」折算成「全天粗算」。
+# ⚠️ **不能用「已过分钟数 / 240」等比折算**：A 股成交额明显**前重后轻**——
+#    实测 2026-09-14：半日 11,045 亿 / 全天 16,311 亿 = **67.7%**，
+#    等比折算会把半日量高估约 35%（曾据此误判「放量 2.1 万亿」，实际当日半日是**缩量**）。
+_CUM_SHARE = [(9 * 60 + 30, 0.00), (10 * 60, 0.30), (10 * 60 + 30, 0.45), (11 * 60, 0.56),
+              (11 * 60 + 30, 0.66), (13 * 60, 0.66), (13 * 60 + 30, 0.78),
+              (14 * 60, 0.84), (14 * 60 + 30, 0.92), (15 * 60, 1.00)]
+
+
+def _session_share():
+    """当前时点对应的「全天成交额累计占比」（按典型日内分布线性插值）。"""
+    mins = datetime.now().hour * 60 + datetime.now().minute
+    if mins <= _CUM_SHARE[0][0]:
+        return 0.0
+    if mins >= _CUM_SHARE[-1][0]:
+        return 1.0
+    for (m0, s0), (m1, s1) in zip(_CUM_SHARE, _CUM_SHARE[1:]):
+        if m0 <= mins <= m1:
+            return s0 + (s1 - s0) * (mins - m0) / max(1, m1 - m0)
+    return 0.66
 
 
 def cmd_turnover(args=None):
@@ -653,9 +668,10 @@ def cmd_turnover(args=None):
             p_sh, p_sz = _sh_sz_eod(prev)
             print(f"  上一交易日 {_fmt_date(prev)} 全天（官方，沪深）：{p_sh + p_sz:,.1f} 亿"
                   f"（沪 {p_sh:,.1f} / 深 {p_sz:,.1f}）")
-            prog = _session_progress()
-            print(f"  已过时段 {prog * 100:.0f}%：按比例粗算全天 ≈ **{(sh + sz) / prog:,.0f} 亿**"
-                  f"（量级参考，尾盘通常加速，实际多高于此）")
+            share = _session_share()
+            if share > 0:
+                print(f"  已成交时段占全天约 {share * 100:.0f}%（按典型日内分布）：粗算全天 ≈ "
+                      f"**{(sh + sz) / share:,.0f} 亿**（成交额前重后轻，非等比外推）")
         except Exception as e:
             print(f"  上一交易日对照取数失败：{type(e).__name__}")
         return
@@ -699,6 +715,42 @@ def cmd_turnover(args=None):
     sys.exit(1)
 
 
+# ---------------- 快讯（财联社电报） ----------------
+#
+# `stock_info_global_cls` 走财联社当前网页端电报接口，实测 0.1s、稳定、无需鉴权。
+# 两个频道：`全部`（最近 20 条）/ `重点`（当日重要，通常只有几条，适合催化剂扫描）。
+# 局限：单次只返回最近 20 条（要更长历史得自己按时间落盘）；标题可能为空（用内容兜底）。
+
+def cmd_news(args=None):
+    """财联社电报（快讯）。
+
+    fetch.py news              # 全部（最近 20 条）
+    fetch.py news 重点          # 重点频道（当日重要）
+    fetch.py news 全部 关键词    # 关键词过滤（标题或内容命中）
+    """
+    args = list(args or [])
+    sym = "全部"
+    if args and args[0] in ("全部", "重点", "all", "key"):
+        sym = {"all": "全部", "key": "重点"}.get(args[0], args[0])
+        args = args[1:]
+    kw = args[0] if args else None
+    df = ak.stock_info_global_cls(symbol=sym)
+    if kw:
+        m = (df["标题"].astype(str).str.contains(kw, na=False)
+             | df["内容"].astype(str).str.contains(kw, na=False))
+        df = df[m]
+    print(f"■ 财联社电报（{sym}）{len(df)} 条" + (f"｜过滤「{kw}」" if kw else ""))
+    if df.empty:
+        print("  无匹配（单次仅返回最近 20 条，关键词太偏就换词或改看『全部』）")
+        return
+    for _, r in df.iterrows():
+        ts = f"{str(r['发布日期']).strip()} {str(r['发布时间']).strip()}"
+        title = str(r["标题"]).strip()
+        body = str(r["内容"]).replace("\n", " ").strip()
+        print(f"\n◆ [{ts}]{' ' + title if title else ''}")
+        print(f"   {body[:300]}{'…' if len(body) > 300 else ''}")
+
+
 # ---------------- 入口 ----------------
 
 def main():
@@ -715,6 +767,8 @@ def main():
         "gbond": cmd_gbond,
         "margin": cmd_margin,
         "turnover": cmd_turnover,
+        "news": cmd_news,
+        "cls": cmd_news,
         "a50": cmd_a50,
         "us": cmd_us,
     }

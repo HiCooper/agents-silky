@@ -5,9 +5,24 @@
 
 ---
 
-## 1. 格隆汇 7×24 快讯（`glh_live.py`）
+## 1. 快讯（**财联社电报首选** + 格隆汇补充）
 
-项目自带脚本，抓 `https://www.gelonghui.com/live/`。原理：该页是 Nuxt SSR，快讯 JSON 直接注入在 `window.__NUXT__` 里，无需跑 JS。
+### 1.1 财联社电报（`ashare-data/fetch news`，首选）
+
+akshare `stock_info_global_cls(symbol=...)`，走财联社当前网页端电报接口，实测 **0.1s**、稳定、无需鉴权。
+
+```bash
+$SKILLS/ashare-data/fetch news           # 全部（最近 20 条）
+$SKILLS/ashare-data/fetch news 重点       # 重点频道（当日重要，通常只有几条）
+$SKILLS/ashare-data/fetch news 全部 成交额  # 关键词过滤
+```
+
+- **`重点` 是催化剂扫描的首选**（条数少、噪声低）；`全部` 用来兜底与查细节。
+- 边界：**单次只返回最近 20 条**；**标题可能为空**（只有正文）；盘中「午评」「涨停分析」这类结构化快讯很好用——**半日/全天成交额、涨跌家数、板块异动**一次拿齐，且是**媒体口径**，比自算的折算更权威。
+
+### 1.2 格隆汇 7×24（`glh_live.py`，补充）
+
+项目自带脚本，抓 `https://www.gelonghui.com/live/`。原理：该页是 Nuxt SSR，快讯 JSON 直接注入在 `window.__NUXT__` 里，无需跑 JS。**条数更多、覆盖更杂（含公告与港股）**，作为财联社的补充。
 
 ```bash
 python3 glh_live.py                 # 默认最新 15 条
