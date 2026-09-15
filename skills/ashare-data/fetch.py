@@ -8,6 +8,7 @@
     fetch.py etf     <关键词或代码> ETF 实时行情（按名称模糊搜索）
     fetch.py bond                 中美国债收益率（最新，EOD 滞后一个交易日）
     fetch.py gbond [国别...]      全球国债收益率（美/中/日/德/英/法/意，EOD）
+    fetch.py margin [子命令]      融资融券因子（汇总/历史/个股排行/标的比例）
     fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
@@ -20,6 +21,8 @@
     fetch.py etf 512480
     fetch.py bond
     fetch.py gbond 日本 德国 JP2YT
+    fetch.py margin
+    fetch.py margin hist 30
     fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
@@ -34,6 +37,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import akshare as ak
+import pandas as pd
 import requests
 
 
@@ -361,6 +365,161 @@ def cmd_us(args):
         sys.exit(1)
 
 
+# ---------------- 融资融券（两融因子） ----------------
+#
+# 接口分工（akshare 1.18.94，2026-09-15 实测）：
+#   macro_china_market_margin_sh/sz()   沪深**全历史**汇总（单位：元）
+#   stock_margin_bse(date)              北交所单日（单位：万元）
+#   stock_margin_account_info()         两融账户数 / 维持担保比例（单位：亿元、%）
+#   stock_margin_detail_sse/szse(date)  个股明细（单位：元）
+#   stock_margin_ratio_pa(symbol,date)  标的证券**融资/融券比例**（保证金参数，非余额）
+#
+# ⚠️ 三个单位陷阱：macro 是元、北交所是万元、account_info 是亿元——统一折算成**亿元**输出。
+# ⚠️ `stock_margin_ratio_pa` 常被误当情绪因子：它给的是「这只票的融资保证金比例」，
+#    用于筛选标的与杠杆档位，**不代表资金流入**；情绪因子看余额与买入额。
+
+def _ymd(d):
+    return str(d).replace("-", "")[:8]
+
+
+def _margin_panel():
+    """沪深两融汇总（亿元），按日期合并。"""
+    sh = ak.macro_china_market_margin_sh()[["日期", "融资余额", "融券余额"]].copy()
+    sz = ak.macro_china_market_margin_sz()[["日期", "融资余额", "融券余额"]].copy()
+    sh.columns = ["日期", "沪融资", "沪融券"]
+    sz.columns = ["日期", "深融资", "深融券"]
+    m = pd.merge(sh, sz, on="日期", how="outer").sort_values("日期").reset_index(drop=True)
+    for c in ("沪融资", "沪融券", "深融资", "深融券"):
+        m[c] = pd.to_numeric(m[c], errors="coerce") / 1e8          # 元 → 亿元
+    m["沪深融资"] = m["沪融资"] + m["深融资"]
+    m["沪深合计"] = m["沪深融资"] + m["沪融券"] + m["深融券"]
+    m["日期"] = m["日期"].astype(str)
+    return m
+
+
+def _margin_bse(date):
+    """北交所两融（亿元）：接口给万元。"""
+    df = ak.stock_margin_bse(date=_ymd(date))
+    r = df.iloc[0]
+    return float(r["融资余额"]) / 1e4, float(r["融券余额"]) / 1e4
+
+
+def _delta(series, n):
+    if len(series) <= n:
+        return float("nan")
+    return float(series.iloc[-1] - series.iloc[-1 - n])
+
+
+def cmd_margin(args=None):
+    """融资融券因子。
+
+    fetch.py margin                 # 汇总：沪深北 融资/融券/两融余额 + 1/5/20 日变动 + 杠杆与参与度
+    fetch.py margin hist [N]        # 近 N 日两融合计序列（默认 20）
+    fetch.py margin top [日期] [N]  # 个股融资余额排行（拥挤度，默认前 15）
+    fetch.py margin ratio [市场] [关键词]   # 标的证券融资/融券比例（沪市/深市/北交所）
+    """
+    args = list(args or [])
+    sub = args[0] if args else "summary"
+
+    # ---- 汇总 ----
+    if sub in ("summary", "总量", ""):
+        m = _margin_panel()
+        last = m.iloc[-1]
+        try:
+            bse_rz, bse_rq = _margin_bse(last["日期"])
+        except Exception:
+            bse_rz = bse_rq = float("nan")
+        rows = [("沪市", last["沪融资"], last["沪融券"]),
+                ("深市", last["深融资"], last["深融券"]),
+                ("北交所", bse_rz, bse_rq)]
+        rz_t = sum(r for _, r, _ in rows if r == r)
+        rq_t = sum(r for _, _, r in rows if r == r)
+        print(f"■ 两融因子　{last['日期']}（EOD，交易所口径）")
+        print(f"{'市场':<8}{'融资余额(亿)':>13}{'融券余额(亿)':>13}{'两融余额(亿)':>13}")
+        for nm, rz, rq in rows:
+            print(f"{nm:<8}{rz:>13.2f}{rq:>13.2f}{rz + rq:>13.2f}")
+        print(f"{'合计':<8}{rz_t:>13.2f}{rq_t:>13.2f}{rz_t + rq_t:>13.2f}")
+        d1, d5, d20 = _delta(m["沪深合计"], 1), _delta(m["沪深合计"], 5), _delta(m["沪深合计"], 20)
+        print(f"\n沪深两融合计变动：日 {d1:+.2f} 亿｜5日 {d5:+.2f} 亿｜20日 {d20:+.2f} 亿"
+              f"（20日 {(d20 / (m['沪深合计'].iloc[-21] or 1)) * 100:+.2f}%）")
+        try:
+            ai = ak.stock_margin_account_info()
+            a_last, a_prev = ai.iloc[-1], ai.iloc[-2]
+            pv = float(a_last["参与交易的投资者数量"])
+            pp = float(a_prev["参与交易的投资者数量"])
+            print(f"杠杆与参与度（{a_last['日期']}）：平均维持担保比例 {float(a_last['平均维持担保比例']):.1f}%"
+                  f"（前值 {float(a_prev['平均维持担保比例']):.1f}%）｜"
+                  f"参与交易投资者 {pv:,.0f}（{(pv / pp - 1) * 100:+.1f}%）｜"
+                  f"有融资负债投资者 {float(a_last['有融资融券负债的投资者数量']):,.0f}")
+            print("  读数：维持担保比例越高=杠杆越安全（<150% 需警惕）；参与投资者减少=交投降温。")
+        except Exception as e:
+            print(f"  账户/担保比例取数失败：{type(e).__name__}")
+        print("  读数：融资余额升=杠杆资金加仓（顺周期确认）；连降 3 日以上=资金撤离，反弹缺增量。")
+        return
+
+    # ---- 历史序列 ----
+    if sub in ("hist", "历史"):
+        n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 20
+        m = _margin_panel().tail(n)
+        m["日变动"] = m["沪深合计"].diff()
+        print(f"{'日期':<13}{'沪(亿)':>11}{'深(亿)':>11}{'沪深合计(亿)':>15}{'日变动(亿)':>12}")
+        for _, r in m.iterrows():
+            d = r["日变动"]
+            print(f"{r['日期']:<13}{r['沪融资'] + r['沪融券']:>11.1f}{r['深融资'] + r['深融券']:>11.1f}"
+                  f"{r['沪深合计']:>15.1f}{'—' if d != d else f'{d:+.1f}':>12}")
+        return
+
+    # ---- 个股排行 ----
+    if sub in ("top", "个股", "排行"):
+        date = args[1] if len(args) > 1 and args[1].isdigit() else None
+        n = int(args[2]) if len(args) > 2 and args[2].isdigit() else 15
+        if date is None:
+            date = _ymd(_margin_panel().iloc[-1]["日期"])
+        frames = []
+        for mk, fn in (("沪", ak.stock_margin_detail_sse), ("深", ak.stock_margin_detail_szse)):
+            try:
+                df = fn(date=date)[["证券代码", "证券简称", "融资余额", "融资买入额"]].copy()
+                df["市场"] = mk
+                frames.append(df)
+            except Exception as e:
+                print(f"  {mk}市明细失败：{type(e).__name__}")
+        if not frames:
+            print("未取到个股两融明细"); sys.exit(1)
+        allm = pd.concat(frames, ignore_index=True)
+        for c in ("融资余额", "融资买入额"):
+            allm[c] = pd.to_numeric(allm[c], errors="coerce") / 1e8
+        allm = allm.sort_values("融资余额", ascending=False).head(n)
+        print(f"■ 个股融资余额排行　{date}（前 {n}，拥挤度观察）")
+        print(f"{'代码':<9}{'名称':<12}{'市':<3}{'融资余额(亿)':>13}{'融资买入额(亿)':>15}")
+        for _, r in allm.iterrows():
+            print(f"{str(r['证券代码']):<9}{_pad(r['证券简称'], 12)}{str(r['市场']):<3}"
+                  f"{r['融资余额']:>13.2f}{r['融资买入额']:>15.2f}")
+        print("  读数：融资余额大且买入额占比高=拥挤（回调时被动减仓压力大）。")
+        return
+
+    # ---- 标的证券比例（用户常见的那张表） ----
+    if sub in ("ratio", "比例"):
+        mk = args[1] if len(args) > 1 and args[1] in ("沪市", "深市", "北交所") else "沪市"
+        kw = args[2] if len(args) > 2 else None
+        date = args[3] if len(args) > 3 and args[3].isdigit() else _ymd(_margin_panel().iloc[-1]["日期"])
+        df = ak.stock_margin_ratio_pa(symbol=mk, date=date)
+        print(f"■ {mk}标的证券融资/融券比例　{date}　共 {len(df)} 只")
+        for col in ("融资比例", "融券比例"):
+            vc = df[col].value_counts().sort_index()
+            print(f"  {col}分布：" + "｜".join(f"{k}:{v}只" for k, v in vc.items()))
+        if kw:
+            hit = df[df["证券代码"].astype(str).str.contains(kw, na=False)
+                     | df["证券简称"].astype(str).str.contains(kw, na=False)]
+            print(hit.head(20).to_string(index=False) if len(hit) else f"  未匹配到「{kw}」")
+        else:
+            print("  提示：加关键词可查具体标的，如 `fetch margin ratio 沪市 中芯`")
+        print("  ⚠️ 这是**保证金参数**（标的能不能两融、杠杆档位），不是资金流入——情绪因子看 `margin` 汇总。")
+        return
+
+    print(__doc__)
+    sys.exit(1)
+
+
 # ---------------- 入口 ----------------
 
 def main():
@@ -375,6 +534,7 @@ def main():
         "etf": cmd_etf,
         "bond": cmd_bond,
         "gbond": cmd_gbond,
+        "margin": cmd_margin,
         "a50": cmd_a50,
         "us": cmd_us,
     }
