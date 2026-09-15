@@ -1,6 +1,6 @@
 ---
 name: ashare-data
-version: 1.5.0
+version: 1.6.0
 description: Fetch A-share index quotes (上证指数/深证成指/创业板指/科创50/沪深300等), ETF quotes (半导体/芯片/科技/科创50等), China/US/Japan/Germany/UK treasury yields (global bond via Sina), A50 index futures, margin trading / 融资融券 (两融余额、融资买入额、个股融资余额排行), market turnover / 两市成交额 (量能、放量缩量), and US index/stock daily quotes (标普/道指/纳指/费城半导体SOX、AVGO/NVDA/TSM等美股) via akshare. Use when the user asks for 指数点位、指数涨跌、A股行情、ETF行情、半导体ETF、国债收益率(10年美债/中债/日债/德债/英债)、两融余额/融资融券、两市成交额/成交量/量能、美股行情/美股指数/费半/隔夜美股收盘，或需要这些标的的实时/最新行情数据.
 name_zh: A股/美股行情数据
 category: finance-data
@@ -33,7 +33,7 @@ $SKILLS/ashare-data/fetch gbond 日本 德国       # 按国别（默认 10 年�
 $SKILLS/ashare-data/fetch gbond JP2YT DE2YT   # 直接给符号：<国别><期限>YT|MT
 $SKILLS/ashare-data/fetch a50                 # A50 期指（富时中国A50，全期限 + 持仓量，★ 标主力）
 $SKILLS/ashare-data/fetch margin              # 融资融券因子：沪深北余额 + 1/5/20日变动 + 维持担保比例
-$SKILLS/ashare-data/fetch turnover            # 两市成交额：盘中实时（沪+深）+ 对照上一交易日全天
+$SKILLS/ashare-data/fetch turnover            # 两市成交额（指数法：沪+深+北证50）+ 对照上一交易日全天
 $SKILLS/ashare-data/fetch turnover eod 20260914    # 官方 EOD 口径
 $SKILLS/ashare-data/fetch turnover hist 20    # 近 20 日官方口径序列 + 5/20 日均量对比（放量/缩量）
 $SKILLS/ashare-data/fetch margin hist 30      # 近 30 日两融合计序列
@@ -61,7 +61,7 @@ $SKILLS/ashare-data/fetch us stock AVGO NVDA  # 指定美股个股（日线；**
 | **A50 期指**（富时中国A50） | `fetch a50` | 东财外盘期货源；主力 `CN26U`（A50期指2609），含全期限与持仓量 |
 | **全球国债收益率** | `fetch gbond` | 新浪全球国债源（**akshare 未封装日/德**）；国别 `US/CN/JP/DE/GB/FR/IT/CA/AU`，期限 `1M~30Y` |
 | **融资融券（两融）** | `fetch margin` | 子命令：汇总 / hist / top / ratio；数据为交易所 T+1 口径（EOD） |
-| **两市成交额（量能）** | `fetch turnover` | 子命令：实时 / eod / hist；**深证成指成交额=深市全部**（非成分股口径） |
+| **两市成交额（量能）** | `fetch turnover` | **指数法**（沪 `sh000001` / 深 `sz399001` / 北证50 `bj899050`）；子命令：实时 / eod / hist |
 | 美股半导体 | AVGO / NVDA / TSM / AMD / ASML / INTC | `fetch us semis` |
 
 ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设备」等关键词的，用 `fetch etf <关键词>` 一次拉全，再按成交额挑主流的那几只。
@@ -87,9 +87,9 @@ ETF 名称里有「半导体 / 芯片 / 科创50 / 科创芯片 / 半导体设�
 5. **`etf` 是 ETF 全市场扫描，实测 18–20 秒**（按代码查单只同价）：盘中急用就直接给已知代码（`fetch etf 512480`），别用关键词扫描等 20 秒。
 6. **`a50` 走东财外盘期货源**，与 `etf`/`bond` 同属东财系，可能被本机代理间歇拦截；被挡时兜底用 `economic-analysis-expert` 的 `scripts/quote.py`（新浪 `hf_CHA50CFD`，免 venv、单合约 CFD）。另外**远月合约常无成交**，此时最新价/涨跌幅是空值——脚本已显示为 `-`，看主力合约即可。
 7. **本 skill 只给「最新/收盘报价」，不给历史日K**：要看趋势、回撤、支撑位，去 `economic-analysis-expert` 的 `references/data-sources.md` §4（走腾讯 `fqkline`；东财**指数**日K 在本机稳定失败，别用）。
-8. **全市场个股快照：两个源都别指望**（实测 2026-09-15）：
-   - `stock_zh_a_spot_em`（东财）**3/3 全 ProxyError**（`82.push2.eastmoney.com`），且源码是 `pz=100` **分页抓取**（≈56 次请求）——单页失败率被页数放大，本机基本不可用。
-   - `stock_zh_a_spot`（新浪）**首次可用**（5561 只、**含北交所** `bj` 前缀、合计成交额正确），但**紧接着就被限流**：再调返回 HTML（`JSONDecodeError: Can not decode value starting with character '<'`），继续重试会**长时间挂住**（实测两次重试均无响应）。
-   - **结论**：要成交额/量能走 `fetch turnover`（指数实时 + 官方 EOD），要个股批量走 `economic-analysis-expert` 的 `quote.py cn`（新浪单次批量，20 只以内稳定）；**不要为了成交额去拉全市场 5000 只**。
-   - 顺带一个口径校验：新浪**指数法**得沪深成交额（当日 10,568 亿），**全市场快照法**得沪深京（10,650 亿），差额约 82 亿 = **北交所成交额**。
+8. **成交额 = 指数法（2026-09-15 定案，不要再试别的）**：沪 `sh000001` / 深 `sz399001` / 北证50 `bj899050`，一次 `hq.sinajs.cn` 请求搞定，`fetch turnover` 已封装。
+   - **不要再用全市场个股快照凑成交额**（已试过，结论明确）：`stock_zh_a_spot_em`（东财）3/3 ProxyError，且是 `pz=100` **分页抓取**（≈56 次请求），失败率被页数放大；`stock_zh_a_spot`（新浪）首次能出数（5561 只、含 `bj`），但**随即被限流**——返回 HTML（`JSONDecodeError '<'`），再试会长时间挂住。
+   - ⚠️ **单位陷阱**：`s_` 简版的成交额**沪深是万元、北证50 是元**（差 10000 倍）。所以 `fetch turnover` 统一用**全量字段**（field 9，一律为元），别自己拿 `s_` 混算。
+   - **口径**：`沪深合计` **不含**北交所；北证50 的成交额近似北交所全部（实测当日 83.9 亿 vs 快照法推出的 ≈82 亿，因为北交所成交集中在权重股），要含京自行相加。
+   - 个股批量是另一件事，走 `economic-analysis-expert` 的 `quote.py cn`（新浪单次批量，20 只以内稳定）。
 9. 数据源为第三方接口，盘中可能有秒级时延，收盘后最准。

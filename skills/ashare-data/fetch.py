@@ -585,19 +585,21 @@ def cmd_margin(args=None):
 #             只有成交量。⚠️ 坑：stock_zh_index_daily_tx 的 `amount` 列其实是**手数**，不是金额。
 #             要历史只能按日循环官方接口（hist 子命令；实测 8 天约 3 秒，够快）。
 
-def _sh_sz_spot():
-    """盘中：沪、深成交额（亿元）。
+# 成交额**只用指数法**（2026-09-15 定案）：沪 sh000001 / 深 sz399001 / 北证50 bj899050。
+# 已明确不再尝试全市场个股快照（stock_zh_a_spot_em 东财+分页必败；stock_zh_a_spot 新浪会被限流）。
+# ⚠️ 单位陷阱：`s_` 简版的成交额**沪深是万元、北证50 是元**，混用会出 10000 倍错误——
+#    所以这里统一用**全量字段**（field 9，一律为元）。
+_TURNOVER_SYMBOLS = [("sh000001", "沪市"), ("sz399001", "深市"), ("bj899050", "北证50")]
 
-    优先 `hq.sinajs.cn` 的 `s_` 简版（1 次请求、自带成交额[字段 5，万元]、不受 bulk 限流）；
-    失败才退回 akshare 的 bulk 接口。两者实测同值（2026-09-15 11:03：5050.81 + 5517.58 亿）。
-    """
-    try:
-        d = _sina_hq(["s_sh000001", "s_sz399001"])
-        return float(d["s_sh000001"][5]) / 1e4, float(d["s_sz399001"][5]) / 1e4   # 万元 → 亿元
-    except Exception:
-        df = ak.stock_zh_index_spot_sina()
-        pick = lambda c: float(df.loc[df["代码"] == c, "成交额"].iloc[0]) / 1e8
-        return pick("sh000001"), pick("sz399001")
+
+def _spot_turnover():
+    """指数法：沪 / 深 / 北证50 当日成交额（亿元）。1 次请求，走 hq.sinajs.cn。"""
+    data = _sina_hq([c for c, _ in _TURNOVER_SYMBOLS])
+    out = {}
+    for code, nm in _TURNOVER_SYMBOLS:
+        f = data.get(code, [])
+        out[nm] = float(f[9]) / 1e8 if len(f) > 9 else float("nan")
+    return out
 
 
 def _sh_sz_eod(date):
@@ -635,19 +637,21 @@ def cmd_turnover(args=None):
 
     fetch.py turnover            # 盘中实时：沪深成交额 + 相对上一交易日全天的进度
     fetch.py turnover eod [日期]  # 官方 EOD 口径（默认最近交易日）
-    fetch.py turnover hist [N]   # 近 N 日官方口径序列 + 均量对比（默认 20；实测 ~0.4s/日）
+    fetch.py turnover hist [N]   # 近 N 日官方口径序列（沪深）+ 均量对比（默认 20；实测 ~0.4s/日）
     """
     args = list(args or [])
     sub = args[0] if args else "now"
 
     if sub in ("now", "盘中", "实时", ""):
-        sh, sz = _sh_sz_spot()
-        print(f"■ 两市成交额（盘中实时，{_fmt_date(_recent_dates(1)[-1])}）")
-        print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**合计 {sh + sz:,.1f} 亿**")
+        amt = _spot_turnover()
+        sh, sz, bj = amt["沪市"], amt["深市"], amt["北证50"]
+        print(f"■ 两市成交额（指数法，盘中实时 {_fmt_date(_recent_dates(1)[-1])}）")
+        print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**沪深合计 {sh + sz:,.1f} 亿**")
+        print(f"  北证50 {bj:,.1f} 亿（近似北交所，指数法口径；沪深合计不含它）")
         try:
             prev = _recent_dates(2)[-2]
             p_sh, p_sz = _sh_sz_eod(prev)
-            print(f"  上一交易日 {_fmt_date(prev)} 全天（官方）：{p_sh + p_sz:,.1f} 亿"
+            print(f"  上一交易日 {_fmt_date(prev)} 全天（官方，沪深）：{p_sh + p_sz:,.1f} 亿"
                   f"（沪 {p_sh:,.1f} / 深 {p_sz:,.1f}）")
             prog = _session_progress()
             print(f"  已过时段 {prog * 100:.0f}%：按比例粗算全天 ≈ **{(sh + sz) / prog:,.0f} 亿**"

@@ -40,7 +40,7 @@ $SKILLS/ashare-data/fetch bond            # 中债收益率（EOD，滞后一日
 $SKILLS/ashare-data/fetch gbond           # 全球国债收益率 EOD（美/中/日/德/英/法/意；akshare 未封装日德）
 $SKILLS/ashare-data/fetch margin          # 融资融券因子（沪深北余额/1-5-20日变动/维持担保比例）
 $SKILLS/ashare-data/fetch margin top 15   # 个股融资余额排行（拥挤度第二维：谁最容易被强平）
-$SKILLS/ashare-data/fetch turnover        # 两市成交额（盘中实时 / eod / hist；量能因子）
+$SKILLS/ashare-data/fetch turnover        # 两市成交额（**指数法**：沪+深+北证50；实时 / eod / hist）
 $SKILLS/ashare-data/fetch a50             # A50 期指（东财外盘期货源，全期限 + 持仓量，★ 标主力）
 
 # —— 美股（日线，新浪源）——
