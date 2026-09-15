@@ -36,7 +36,8 @@ $SKILLS/ashare-data/fetch index 000688   # 单个指数（数字自动补 sh/sz�
 $SKILLS/ashare-data/fetch index 科创50    # 支持名称关键词
 $SKILLS/ashare-data/fetch etf 半导体       # 按关键词搜 ETF（⚠️ 全市场扫描，实测 18–20s）
 $SKILLS/ashare-data/fetch etf 512480      # 按代码查 ETF（同样 ~18s）
-$SKILLS/ashare-data/fetch bond            # 中债收益率（EOD，滞后一日）；⚠️ 美债三列为 nan
+$SKILLS/ashare-data/fetch bond            # 中债收益率（EOD，滞后一日）；⚠️ 美债列时通时不通
+$SKILLS/ashare-data/fetch a50             # A50 期指（东财外盘期货源，全期限 + 持仓量，★ 标主力）
 
 # —— 美股（日线，新浪源）——
 $SKILLS/ashare-data/fetch us              # 标普/道指/纳指/费半 .SOX，实测 ~3s
@@ -44,7 +45,7 @@ $SKILLS/ashare-data/fetch us semis        # 预设半导体篮子 AVGO/NVDA/TSM/
 $SKILLS/ashare-data/fetch us stock AVGO NVDA MU   # 任意美股代码，不限篮子
 ```
 
-**实测边界（2026-09-15）**：① 美股全走新浪源、稳定（0.1–0.6s/次），但**只到最近一个美股收盘（日线）**——要盘前/盘中价用 `market_panel.sh us`；② **`fetch bond` 的美债列返回 `nan`**（中债正常：10 年 1.6888%），**10Y 美债实时走 WebSearch**，别把 nan 写成「数据缺失」；③ `fetch etf` 每次全市场扫描 **18–20s**，急用就直接给已知代码；④ `fetch` 只给指数/ETF 详情，**不给多只 A 股个股的批量全量字段**——那件事走 §3.1。
+**实测边界（2026-09-15）**：① 美股全走新浪源、稳定（0.1–0.6s/次），但**只到最近一个美股收盘（日线）**——要盘前/盘中价用 `market_panel.sh us`，**盘前/盘后只有新浪 `gb_` 字段有**（akshare 拿不到，见 §3.2）；② **`fetch bond` 的美债列时通时不通**（08:45 全 `nan`、08:55 正常返回 10 年 4.97%）——优先用 `bond` 但**必须核对 nan**，nan 时转 WebSearch；③ `fetch etf` 每次全市场扫描 **18–20s**，急用就直接给已知代码；④ **A50 走 `fetch a50`**（东财源，有全期限与持仓量，比新浪 CFD 单合约更全；东财被挡时兜底用 `quote.py`）；⑤ `fetch` 只给指数/ETF/A50 详情，**不给多只 A 股个股的批量全量字段**——那件事走 §3.1 或 §3.2 的 `quote.py cn`。
 
 自定义 akshare 调用时用它的解释器：
 
@@ -142,11 +143,14 @@ raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=15
 
 **三个注意**：① 必须带 `Referer`，否则被拒；② 返回 **GBK**，要 `decode("gbk")`；③ **简版符号 `s_sh000001` 的字段序完全不同**（`名称,最新,涨跌额,涨跌幅,成交量,成交额`），别和全量字段混用——简版适合「只要指数涨跌幅」，全量适合要成交额与高低点。
 
-### 3.2 通用报价器 `scripts/quote.py`（**A50 / 美股夜盘 / 美股任意代码 / A 股个股批量**）
+### 3.2 通用报价器 `scripts/quote.py`（**美股夜盘/盘前盘后 / 美股任意代码 / A 股个股批量**）
 
-`market_panel.sh` 是**固定面板**：不含 A50，也不支持任意美股代码。要抓「A50 + 美股延长时段价 + 指定个股」时用 `quote.py`——**纯标准库，系统 `python3` 直接跑，不需要 venv**，所以别再每次现写脚本。
+`market_panel.sh` 是**固定面板**：不支持任意美股代码。要抓「美股延长时段价 + 指定个股 + A 股个股批量」时用 `quote.py`——**纯标准库，系统 `python3` 直接跑，不需要 venv**，所以别再每次现写脚本。
 
-> **边界（别搞混）**：**A 股指数/ETF 一律先走 `ashare-data/fetch index|etf`**（见 §2，带中文名、成交额、换手率）。`quote.py cn` 只负责 `ashare-data` **不覆盖**的那件事——**多只个股一次拿齐开/昨收/收/高/低/额**。脚本若收到指数/ETF 代码会打印一条提示，不阻断但会提醒你走对入口。
+> **边界（别搞混）**：
+> - **A 股指数/ETF** 一律先走 `ashare-data/fetch index|etf`（见 §2）；`quote.py cn` 只负责它**不覆盖**的「多只个股一次拿齐开/昨收/收/高/低/额」，收到指数/ETF 代码会打印提示。
+> - **A50 期指** 先走 `ashare-data/fetch a50`（东财源，含全期限与持仓量）；`quote.py` 的 `hf_CHA50CFD` 只是**东财被挡时的免 venv 兜底**（单合约 CFD）。
+> - **美股盘前/盘后（延长时段）只能走这里**：akshare 两条路都拿不到——`stock_us_hist_min_em` 的分钟数据仅覆盖 21:30–04:00 北京时间（美东常规时段），`stock_us_famous_spot_em` 的列里无延长时段字段；新浪 `gb_` 的 [21]价/[22]幅/[24]时刻才有（实测 2026-09-15）。
 
 ```bash
 Q=$SKILLS/economic-analysis-expert/scripts/quote.py

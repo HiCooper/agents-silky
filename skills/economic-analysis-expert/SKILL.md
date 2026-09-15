@@ -35,7 +35,8 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 | **美股指数 / 费半 / 半导体篮子 / 任意美股**（日线） | `ashare-data`（**首选**） | `$SKILLS/ashare-data/fetch us`｜`fetch us semis`｜`fetch us stock AVGO NVDA MU` |
 | 同上（需要在 Python 里内嵌调用时） | 本 skill `scripts/us_data.py`（与 `fetch us` 同源等价） | `$PY $SKILLS/economic-analysis-expert/scripts/us_data.py indices` |
 | **跨市场实时面板**（港股、韩国、美股期货、油金、美元、**美股盘前/实时价**） | 本 skill `scripts/market_panel.sh`（新浪，固定面板；**A 股部分仅作一站式快照，正式取数走 `ashare-data`**） | `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all` |
-| **A50 / 美股夜盘（盘前盘后）/ 任意美股个股** | 本 skill `scripts/quote.py`（新浪，**纯标准库无需 venv**，支持任意代码） | `python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（默认夜盘一屏）｜`quote.py us COHR MU`｜`quote.py us --basket optical` |
+| **A50 期指（夜盘）** | `ashare-data`（**首选**）——东财外盘期货源，含**全期限与持仓量** | `$SKILLS/ashare-data/fetch a50`｜兜底：`python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（新浪 CFD，免 venv） |
+| **美股盘前/盘后（延长时段）/ 任意美股个股** | 本 skill `scripts/quote.py`（新浪 `gb_`，**纯标准库无需 venv**）——**延长时段 akshare 拿不到，只能用这条**（见坑 2） | `python3 $SKILLS/economic-analysis-expert/scripts/quote.py`（默认夜盘一屏）｜`quote.py us COHR MU`｜`quote.py us --basket optical` |
 | **多只 A 股个股全量字段**（开/昨收/收/高/低/额） | `quote.py cn`——**仅个股**；**指数/ETF 不在此列，仍走 `ashare-data/fetch index\|etf`**（脚本对指数/ETF 代码会自动提示） | `quote.py cn 300308 300502`｜原始字段法见 `references/data-sources.md` §3.1 |
 | **历史日K**（判趋势 / 破位 / 支撑） | 腾讯 `fqkline`（**东财 K 线不可用，见坑 4**） | 见 `references/data-sources.md` §4 |
 | **格隆汇 7×24 快讯** | 项目自带 `glh_live.py` | `python3 glh_live.py --limit 25` |
@@ -47,8 +48,8 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 **五个必踩的坑**（2026-09-15 实测更新）：
 
 1. **akshare 在 skill 自带 venv 里**，系统 `python3` 没装——直接用 `$SKILLS/ashare-data/fetch`（自动走 .venv）；需要手写 akshare 时先设 `PY=$SKILLS/ashare-data/.venv/bin/python`。
-2. **美股必须走新浪源**：`fetch us` 用的是 `index_us_stock_sina` / `stock_us_daily`，实测稳定；**东财**的 `stock_us_spot_em` / `stock_us_hist` / `famous_spot_em` 打 `63/69/72.push2*.eastmoney.com`，被代理间歇拦截，别依赖。**`fetch us` 只给日线（截至最近一个美股收盘）**，要看美股盘前/盘中实时价，走 `market_panel.sh us`。
-3. **`fetch bond` 的美债列是 `nan`**（实测：中债 10 年 1.6888% 正常，美债 10/2/30 年全为 nan）——**10Y 美债走 WebSearch 或用用户给的实时报价**，别把 nan 写成「数据缺失」。
+2. **美股必须走新浪源，且延长时段只有新浪有**：`fetch us` 用 `index_us_stock_sina` / `stock_us_daily`，实测稳定；**东财**的 `stock_us_spot_em` / `stock_us_hist` / `famous_spot_em` 打 `63/69/72.push2*.eastmoney.com`，被代理间歇拦截（2026-09-15 实测：同一命令**两分钟内一次成功一次 ProxyError**），别依赖。两点补充：① `fetch us` 只给**日线**（截至最近一个美股收盘），盘中价走 `market_panel.sh us`；② **盘前/盘后（延长时段）akshare 拿不到**——`stock_us_hist_min_em` 的分钟数据只覆盖 21:30–04:00 北京时间（= 美东 09:30–16:00 常规时段），`famous_spot_em` 的列里也没有延长时段字段，**只有新浪 `gb_` 原始字段有**（`quote.py us` 已封装）。
+3. **`fetch bond` 的美债列时通时不通**（实测 2026-09-15：08:45 三列全 `nan`，08:55 正常返回 10 年 **4.97%** / 2 年 4.65% / 30 年 5.34%）——**美债优先用 `bond`，但必须核对是否 `nan`**；是 nan 才转 WebSearch 或用户给的实时报价，别把 nan 写成「数据缺失」。
 4. **东财指数日K（`index_zh_a_hist`）在本机稳定被代理拒绝**（`80.push2.eastmoney.com`），**别用它取 A 股指数历史**；`stock_zh_a_hist`（个股日K）时通时不通，也别当主力。**历史日K 统一走腾讯 `fqkline`**（见 `references/data-sources.md` §4）。
 5. **`fetch etf <关键词>` 是全市场扫描，约 18–20 秒**（单只 `fetch etf 512480` 同价）；另外**新浪接口返回 GBK**，脚本内已 `iconv` 转 UTF-8，裸 `curl` 会乱码。
 
@@ -158,7 +159,7 @@ description: 「经济分析专家」身份的操作手册——规定「快捷�
 - `references/calibration-log.md` —— 判断校准日志·**提炼层**（只存跨项目可复用的教训与模板；日频原始记录写项目内 `calibration-log.md`，见 §7）；
 - `references/data-sources.md` —— 取数工具链速查；
 - `scripts/market_panel.sh` —— 跨市场实时面板（新浪；含美股盘前/实时价）；
-- `scripts/quote.py` —— **通用报价器**：A50 / 美股夜盘（盘前盘后）/ 任意美股个股 / A股指数·ETF·个股 / 港股 / 原始字段；纯标准库、无需 venv、支持 `--json`。**要看 A50 或任意美股代码时用它，别现写脚本**（`market_panel.sh` 是固定面板，不含 A50、不支持任意代码）。
+- `scripts/quote.py` —— **通用报价器**：**美股盘前/盘后（延长时段，akshare 拿不到，唯此一处）** / 任意美股个股 / A50 兜底（新浪 CFD）/ A 股个股批量 / 港股 / 原始字段；纯标准库、无需 venv、支持 `--json`。**要看美股延长时段价或任意美股代码时用它，别现写脚本**（`market_panel.sh` 是固定面板，不支持任意代码）。
 - `scripts/us_data.py` —— 美股指数 / 半导体个股日线（须用 `$PY` 跑）；**首选是 `ashare-data/fetch us`，本脚本是它的本地等价封装**，仅在内嵌调用时需要。
 
 脚本也可用绝对路径调用，如 `$SKILLS/economic-analysis-expert/scripts/market_panel.sh all`。

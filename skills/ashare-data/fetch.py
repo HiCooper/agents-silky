@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""A股指数 / ETF / 中美债收益率 / 美股（日线） 行情获取脚本（基于 akshare）。
+"""A股指数 / ETF / 中美债收益率 / A50期指 / 美股（日线） 行情获取脚本（基于 akshare）。
 
 用法：
     fetch.py index   <代码或名称>   单个指数实时行情
     fetch.py indices              核心指数一览
     fetch.py etf     <关键词或代码> ETF 实时行情（按名称模糊搜索）
     fetch.py bond                 中美国债收益率（最新，EOD 滞后一个交易日）
+    fetch.py a50                  A50 期指（富时中国A50，东财外盘期货源；含全期限与持仓量）
     fetch.py us                  美股指数（标普/道指/纳指/费半，新浪源，日线）
     fetch.py us semis            美股半导体一篮子（日线）
     fetch.py us stock AVGO NVDA  指定美股个股（日线）
@@ -17,6 +18,7 @@
     fetch.py etf 半导体
     fetch.py etf 512480
     fetch.py bond
+    fetch.py a50                 # A50 期指（夜盘时段可用；★ 标出主力合约）
     fetch.py us
     fetch.py us semis
 """
@@ -42,10 +44,63 @@ def _f(v, nd=3):
 
 
 def _pct(v):
+    """百分比格式化；NaN / 非数值 → '-'（远月无成交合约常见 NaN）。"""
     try:
-        return f"{float(v):+.2f}%"
+        f = float(v)
+        return "-" if f != f else f"{f:+.2f}%"
     except (TypeError, ValueError):
-        return str(v)
+        return "-"
+
+
+def _w(s):
+    """显示宽度：中日韩字符按 2 列计。"""
+    return sum(2 if ord(c) > 0x2E80 else 1 for c in str(s))
+
+
+def _pad(s, n):
+    s = str(s)
+    return s + " " * max(0, n - _w(s))
+
+
+def _num(v, nd=1):
+    """数值格式化：NaN / 非数值 → '-'（远月无成交的合约常见 NaN）。"""
+    try:
+        f = float(v)
+        return "-" if f != f else round(f, nd)
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _int(v):
+    try:
+        f = float(v)
+        return "-" if f != f else int(f)
+    except (TypeError, ValueError):
+        return "-"
+
+
+# ---------------- A50 期指（东财外盘期货源） ----------------
+
+def cmd_a50(_args=None):
+    """A50 期指（富时中国A50，新加坡）。全期限 + 持仓量，★ 标出主力（持仓量最大）。
+
+    数据源为东财 `futures_global_spot_em`（本机代理对东财间歇性拦截）；
+    若被挡，兜底走 `economic-analysis-expert/scripts/quote.py`（新浪 hf_CHA50CFD，免 venv）。
+    """
+    df = ak.futures_global_spot_em()
+    hit = df[df["名称"].astype(str).str.contains("A50", na=False)].copy()
+    if hit.empty:
+        print("未取到 A50 期指。可能原因：东财源被代理拦截——兜底用 "
+              "`economic-analysis-expert/scripts/quote.py`（新浪 hf_CHA50CFD）。")
+        sys.exit(1)
+    main = hit.loc[hit["持仓量"].astype(float).idxmax(), "代码"]
+    print(f"{'名称':<16}{'代码':<9}{'最新价':>10}{'涨跌额':>9}{'涨跌幅':>9}"
+          f"{'今开':>10}{'最高':>10}{'最低':>10}{'昨结':>10}{'成交量':>9}{'持仓量':>10}")
+    for _, r in hit.iterrows():
+        print(f"{_pad(r['名称'], 16)}{_pad(r['代码'], 9)}{_num(r['最新价']):>10}{_num(r['涨跌额']):>9}"
+              f"{_pct(r['涨跌幅']):>9}{_num(r['今开']):>10}{_num(r['最高']):>10}{_num(r['最低']):>10}"
+              f"{_num(r['昨结']):>10}{_int(r['成交量']):>9}{_int(r['持仓量']):>10}"
+              f"{'  ★主力' if r['代码'] == main else ''}")
 
 
 # ---------------- 指数 ----------------
@@ -240,6 +295,7 @@ def main():
         "indices": cmd_indices,
         "etf": cmd_etf,
         "bond": cmd_bond,
+        "a50": cmd_a50,
         "us": cmd_us,
     }
     fn = table.get(cmd)
