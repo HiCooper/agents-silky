@@ -1,5 +1,5 @@
 ---
-name: ashare-data
+name: akshare-data
 version: 1.8.0
 description: Fetch A-share index quotes (上证指数/深证成指/创业板指/科创50/沪深300等), ETF quotes (半导体/芯片/科技/科创50等), China/US/Japan/Germany/UK treasury yields (global bond via Sina), A50 index futures, margin trading / 融资融券 (两融余额、融资买入额、个股融资余额排行), market turnover / 两市成交额 (量能、放量缩量), CLS telegraph news / 财联社电报快讯, and US index/stock daily quotes (标普/道指/纳指/费城半导体SOX、AVGO/NVDA/TSM等美股) via akshare. Use when the user asks for 指数点位、指数涨跌、A股行情、ETF行情、半导体ETF、国债收益率(10年美债/中债/日债/德债/英债)、两融余额/融资融券、两市成交额/成交量/量能、财联社快讯/电报/快讯、美股行情/美股指数/费半/隔夜美股收盘，或需要这些标的的实时/最新行情数据.
 name_zh: A股/美股行情数据
@@ -10,41 +10,41 @@ category: finance-data
 
 用 akshare 拉取 A 股指数、ETF、中美债收益率，以及**美股指数/个股（日线）**的最新行情。数据源为新浪/东方财富，收盘后为当日收盘价，盘中为实时价（美股见下方边界第 2 条）。
 
-> **路径约定**：`$SKILLS` = 本机 skill 仓库根 `/Users/xueancao/Projects/QoderProjects/agents-silky/skills`（本 skill 即 `$SKILLS/ashare-data`）。脚本用 `BASH_SOURCE` 相对定位，所以仓库整体搬家不用改；换机器只需改这一处。
+> **路径约定**：`$SKILLS` = 本机 skill 仓库根 `/Users/xueancao/Projects/QoderProjects/agents-silky/skills`（本 skill 即 `$SKILLS/akshare-data`）。脚本用 `BASH_SOURCE` 相对定位，所以仓库整体搬家不用改；换机器只需改这一处。
 
 ## 前置
 
-- 依赖装在 skill 自带的虚拟环境里：`$SKILLS/ashare-data/.venv/`（已装 akshare 1.18.x）。
-- 入口脚本：`$SKILLS/ashare-data/fetch`（可直接执行，会自动用 .venv 里的 python）。
-- 新机器缺 `.venv` 时，跑一次 `$SKILLS/ashare-data/setup.sh` 重建（`.venv` 不入库）。
+- 依赖装在 skill 自带的虚拟环境里：`$SKILLS/akshare-data/.venv/`（已装 akshare 1.18.x）。
+- 入口脚本：`$SKILLS/akshare-data/fetch`（可直接执行，会自动用 .venv 里的 python）。
+- 新机器缺 `.venv` 时，跑一次 `$SKILLS/akshare-data/setup.sh` 重建（`.venv` 不入库）。
 - 不要用系统 `python3` 直接跑 `fetch.py`（系统 Python 没装 akshare）。
 
 ## 用法
 
 ```bash
-$SKILLS/ashare-data/fetch indices            # 核心指数一览（上证/深成/创业板/科创50/沪深300/上证50/中证500/中证1000）
-$SKILLS/ashare-data/fetch index  000688      # 单个指数（数字自动补 sh/sz 前缀）
-$SKILLS/ashare-data/fetch index  科创50       # 也支持名称关键词
-$SKILLS/ashare-data/fetch etf    半导体       # 按名称关键词搜 ETF
-$SKILLS/ashare-data/fetch etf    512480      # 按代码查单只 ETF
-$SKILLS/ashare-data/fetch bond                # 中美债收益率（10年/2年/30年）
-$SKILLS/ashare-data/fetch gbond               # 全球国债收益率 EOD（默认美/中/日/德/英 10Y）
-$SKILLS/ashare-data/fetch gbond 日本 德国       # 按国别（默认 10 年）
-$SKILLS/ashare-data/fetch gbond JP2YT DE2YT   # 直接给符号：<国别><期限>YT|MT
-$SKILLS/ashare-data/fetch a50                 # A50 期指（富时中国A50，全期限 + 持仓量，★ 标主力）
-$SKILLS/ashare-data/fetch margin              # 融资融券因子：沪深北余额 + 1/5/20日变动 + 维持担保比例
-$SKILLS/ashare-data/fetch turnover            # 两市成交额（指数法：沪+深+北证50）+ 对照上一交易日全天
-$SKILLS/ashare-data/fetch turnover eod 20260914    # 官方 EOD 口径
-$SKILLS/ashare-data/fetch turnover hist 20    # 近 20 日官方口径序列 + 5/20 日均量对比（放量/缩量）
-$SKILLS/ashare-data/fetch news                # 财联社电报·**重点频道**（默认，当日重要，通常几条）
-$SKILLS/ashare-data/fetch news 成交额          # 在重点频道里按关键词过滤
-$SKILLS/ashare-data/fetch news 全部            # 切到全部频道（最近 20 条）；可再跟关键词
-$SKILLS/ashare-data/fetch margin hist 30      # 近 30 日两融合计序列
-$SKILLS/ashare-data/fetch margin top 20260914 15   # 个股融资余额排行（拥挤度）
-$SKILLS/ashare-data/fetch margin ratio 沪市 中芯    # 标的证券融资/融券比例（保证金参数）
-$SKILLS/ashare-data/fetch us                  # 美股指数（标普/道指/纳指/费半，新浪源，日线）
-$SKILLS/ashare-data/fetch us semis            # 美股半导体一篮子（AVGO/NVDA/TSM/AMD/ASML/INTC）
-$SKILLS/ashare-data/fetch us stock AVGO NVDA  # 指定美股个股（日线；**任意美股代码，不限半导体篮子**）
+$SKILLS/akshare-data/fetch indices            # 核心指数一览（上证/深成/创业板/科创50/沪深300/上证50/中证500/中证1000）
+$SKILLS/akshare-data/fetch index  000688      # 单个指数（数字自动补 sh/sz 前缀）
+$SKILLS/akshare-data/fetch index  科创50       # 也支持名称关键词
+$SKILLS/akshare-data/fetch etf    半导体       # 按名称关键词搜 ETF
+$SKILLS/akshare-data/fetch etf    512480      # 按代码查单只 ETF
+$SKILLS/akshare-data/fetch bond                # 中美债收益率（10年/2年/30年）
+$SKILLS/akshare-data/fetch gbond               # 全球国债收益率 EOD（默认美/中/日/德/英 10Y）
+$SKILLS/akshare-data/fetch gbond 日本 德国       # 按国别（默认 10 年）
+$SKILLS/akshare-data/fetch gbond JP2YT DE2YT   # 直接给符号：<国别><期限>YT|MT
+$SKILLS/akshare-data/fetch a50                 # A50 期指（富时中国A50，全期限 + 持仓量，★ 标主力）
+$SKILLS/akshare-data/fetch margin              # 融资融券因子：沪深北余额 + 1/5/20日变动 + 维持担保比例
+$SKILLS/akshare-data/fetch turnover            # 两市成交额（指数法：沪+深+北证50）+ 对照上一交易日全天
+$SKILLS/akshare-data/fetch turnover eod 20260914    # 官方 EOD 口径
+$SKILLS/akshare-data/fetch turnover hist 20    # 近 20 日官方口径序列 + 5/20 日均量对比（放量/缩量）
+$SKILLS/akshare-data/fetch news                # 财联社电报·**重点频道**（默认，当日重要，通常几条）
+$SKILLS/akshare-data/fetch news 成交额          # 在重点频道里按关键词过滤
+$SKILLS/akshare-data/fetch news 全部            # 切到全部频道（最近 20 条）；可再跟关键词
+$SKILLS/akshare-data/fetch margin hist 30      # 近 30 日两融合计序列
+$SKILLS/akshare-data/fetch margin top 20260914 15   # 个股融资余额排行（拥挤度）
+$SKILLS/akshare-data/fetch margin ratio 沪市 中芯    # 标的证券融资/融券比例（保证金参数）
+$SKILLS/akshare-data/fetch us                  # 美股指数（标普/道指/纳指/费半，新浪源，日线）
+$SKILLS/akshare-data/fetch us semis            # 美股半导体一篮子（AVGO/NVDA/TSM/AMD/ASML/INTC）
+$SKILLS/akshare-data/fetch us stock AVGO NVDA  # 指定美股个股（日线；**任意美股代码，不限半导体篮子**）
 ```
 
 ## 关键代码速查

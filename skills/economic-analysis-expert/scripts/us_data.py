@@ -9,9 +9,9 @@
 局限：给的是**日线（截至最近一个美股收盘）**，不是盘中/盘前实时价。
 要看美股**盘前/实时**，用同目录的 `market_panel.sh us`（新浪 hq.sinajs.cn）。
 
-用法（必须用 ashare-data 的 venv 跑，系统 python 没装 akshare）：
+用法（必须用 akshare-data 的 venv 跑，系统 python 没装 akshare）：
     SKILLS=/Users/xueancao/Projects/QoderProjects/agents-silky/skills
-    PY=$SKILLS/ashare-data/.venv/bin/python
+    PY=$SKILLS/akshare-data/.venv/bin/python
     $PY $SKILLS/economic-analysis-expert/scripts/us_data.py indices   # 标普/道指/纳指/费半
     $PY $SKILLS/economic-analysis-expert/scripts/us_data.py semis     # 半导体一篮子
     $PY $SKILLS/economic-analysis-expert/scripts/us_data.py stock AVGO NVDA

@@ -8,8 +8,8 @@ quote.py —— 新浪行情通用报价器（A50 / 美股夜盘 / 任意标的�
 本脚本把这些封装成命令，避免每次现写脚本。**纯标准库，无需 venv，系统 python3 即可。**
 
 > 入口边界（2026-09-15 定）：
-> - **A 股指数/ETF** → `$SKILLS/ashare-data/fetch index|etf`；本脚本 `cn` 只补「多只个股批量」，收到指数/ETF 代码会提示。
-> - **A50 期指** → 首选 `$SKILLS/ashare-data/fetch a50`（东财源，含全期限与持仓量）；本脚本的 `hf_CHA50CFD` 是**东财被挡时的免 venv 兜底**。
+> - **A 股指数/ETF** → `$SKILLS/akshare-data/fetch index|etf`；本脚本 `cn` 只补「多只个股批量」，收到指数/ETF 代码会提示。
+> - **A50 期指** → 首选 `$SKILLS/akshare-data/fetch a50`（东财源，含全期限与持仓量）；本脚本的 `hf_CHA50CFD` 是**东财被挡时的免 venv 兜底**。
 > - **美股盘前/盘后（延长时段）** → **只有本脚本能拿**（akshare 无此数据，新浪 `gb_` 字段才有）。
 
 用法：
@@ -17,7 +17,7 @@ quote.py —— 新浪行情通用报价器（A50 / 美股夜盘 / 任意标的�
     quote.py night                # 同上
     quote.py us AVGO NVDA MU      # 任意美股：收盘 + 盘中/延长时段价
     quote.py us --basket optical  # 预设篮子：semi / optical / memory / software / mega
-    quote.py cn 300308 300502     # A股**个股批量**（指数/ETF 请走 ashare-data/fetch index|etf）
+    quote.py cn 300308 300502     # A股**个股批量**（指数/ETF 请走 akshare-data/fetch index|etf）
     quote.py hk 00981 00700       # 港股
     quote.py raw hf_CL gb_mu      # 逃生口：直接给新浪符号，打印原始字段
     quote.py --json night         # JSON 输出，便于下游处理
@@ -115,7 +115,7 @@ def norm_hk(code):
     return code if code.startswith("rt_hk") else "rt_hk" + code.zfill(5)
 
 
-# A 股 ETF 代码前缀（沪 51/56/58、深 15/16/13）；配合 INDEX_MAP 用来判断是否该走 ashare-data
+# A 股 ETF 代码前缀（沪 51/56/58、深 15/16/13）；配合 INDEX_MAP 用来判断是否该走 akshare-data
 ETF_PREFIX = ("51", "56", "58", "15", "16", "13")
 
 
@@ -125,12 +125,12 @@ def is_index_or_etf(sym):
 
 
 def ashare_hint(syms):
-    """A 股指数/ETF 的政策是**优先走 `ashare-data/fetch index|etf`**。
+    """A 股指数/ETF 的政策是**优先走 `akshare-data/fetch index|etf`**。
     本脚本不禁止，但会提示一句，避免习惯性绕开现成入口。"""
     hit = [s for s in syms if is_index_or_etf(s)]
     if hit:
         print(f"⚠️ 提示：{'、'.join(s[2:] for s in hit)} 属 A 股**指数/ETF**，按约定应优先走 "
-              f"`$SKILLS/ashare-data/fetch index|etf`（带中文名、成交额、换手率）。\n"
+              f"`$SKILLS/akshare-data/fetch index|etf`（带中文名、成交额、换手率）。\n"
               f"   `quote.py cn` 主要补它不覆盖的场景：**多只个股一次拿齐开/昨收/收/高/低/额**。",
               file=sys.stderr)
 
@@ -298,7 +298,7 @@ def main(argv):
     elif cmd == "cn":
         if len(args) < 2:
             print("用法: quote.py cn 300308 300502 601138   # A股**个股**批量\n"
-                  "      （A 股指数/ETF 请走 `$SKILLS/ashare-data/fetch index|etf`）", file=sys.stderr)
+                  "      （A 股指数/ETF 请走 `$SKILLS/akshare-data/fetch index|etf`）", file=sys.stderr)
             return 2
         syms, kind = [norm_cn(s) for s in args[1:]], "cn"
         ashare_hint(syms)
