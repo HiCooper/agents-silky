@@ -678,11 +678,24 @@ def cmd_turnover(args=None):
         return
 
     if sub in ("eod", "收盘"):
-        date = args[1] if len(args) > 1 and args[1].isdigit() else _recent_dates(2)[-2]
-        sh, sz = _sh_sz_eod(date)
-        print(f"■ 两市成交额（官方 EOD，{_fmt_date(date)}）")
-        print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**合计 {sh + sz:,.1f} 亿**")
-        return
+        if len(args) > 1 and args[1].isdigit():
+            dates = [args[1]]
+        else:
+            # 收盘后默认取**今日**官方值；若交易所尚未公布（通常 18:00–20:00 发布）再退回上一交易日
+            d = _recent_dates(2)
+            dates = [d[-1], d[-2]]
+        for date in dates:
+            try:
+                sh, sz = _sh_sz_eod(date)
+                print(f"■ 两市成交额（官方 EOD，{_fmt_date(date)}）")
+                print(f"  沪市 {sh:,.1f} 亿｜深市 {sz:,.1f} 亿｜**合计 {sh + sz:,.1f} 亿**")
+                if _fmt_date(date) == _fmt_date(_recent_dates(1)[-1]):
+                    print("  （今日官方口径）")
+                return
+            except Exception as e:
+                print(f"  {_fmt_date(date)} 官方口径暂未取到（{type(e).__name__}），回退上一交易日", file=sys.stderr)
+        print("官方口径取数失败")
+        sys.exit(1)
 
     if sub in ("hist", "历史", "序列"):
         n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 20
