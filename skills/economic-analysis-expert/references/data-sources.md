@@ -216,7 +216,13 @@ python3 $Q --json us MU          # JSON，便于下游处理
 | **外盘期货**：A50 / 纳指 / 标普 | `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20t=/GlobalFuturesService.getGlobalFuturesMinLine?symbol=<CHA50CFD\|NQ\|ES>` | JSONP，去掉 `var t=(` 与尾部 `)` 后 `JSON.parse`；取 `.minLine_1d`。**首行是表头行，`[1]` = 基准（昨结）**；其后每行 `[0]=HH:MM, [1]=价, [2]=量, [3]=持仓, [4]=均价` |
 | **全球指数**：KOSPI / KOSDAQ | `https://gi.finance.sina.com.cn/hq/min?symbol=<KOSPI\|KOSDAQ>&num=400` | JSON `result.data`；每行 `[0]=HH:MM, [1]=价`；**基准（昨收）只在首行 `[5]`** |
 
-**实测样本（2026-09-15 晚）**：A50 **276 点**（17:01→21:39，基准 14271.00）｜**NQ 939 点**（06:01→21:42，基准 29152.25）｜ES 942 点｜KOSPI **382 点**（08:00→14:30，基准 6684.37）｜KOSDAQ 382 点（基准 806.79）。
+| **港股指数**：恒生科技 / 恒指 | `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=<hkHSTECH\|hkHSI>` | **普通 JSON**（不是 JSONP），直接 `res.json()`；`data[code].data.data` 是 `"HHMM 价 量 额"` 字符串数组（**与 A 股同格式**），昨收在 `data[code].qt[code][4]` |
+
+> ⚠️ **港股分时只能走腾讯**（2026-09-17 实测）：新浪的「全球指数」分时端点 `gi.finance.sina.com.cn/hq/min` **只认 KOSPI/KOSDAQ**，对 `HSTECH` 返回 `data: null`；新浪的 `HK_MinLineService.getMinLine` 也已下线（返回 `Service not valid`）。腾讯这条对 A 股与港股都可用。
+>
+> ⚠️ **港股报价的字段序和 A 股/韩股都不同**，最容易踩的是：`hkHSTECH` 的 **[2] 是今开、[3] 才是昨收**（用腾讯分时首点 09:30 的价可以交叉验证）。完整：`[1]中文名 [2]今开 [3]昨收 [4]最高 [5]最低 [6]现价 [7]涨跌额 [8]涨跌幅% [18]时间`；`rt_` 变体的时间带秒，`pickClock` 那种只认 `HH:MM:SS` 的解析要优先用 `rt_`。
+
+**实测样本（2026-09-15 晚）**：A50 **276 点**（17:01→21:39，基准 14271.00）｜**NQ 939 点**（06:01→21:42，基准 29152.25）｜ES 942 点｜KOSPI **382 点**（08:00→14:30，基准 6684.37）｜KOSDAQ 382 点（基准 806.79）｜恒生科技 **120 点下采样后**（09:30→16:08，基准 4325.45）。
 
 **两个用途**：① 卡片/看板里的迷你走势图；② 判断**日内形态**（低开高走 / 单边下行），而不只是一个涨跌幅数字。
 
